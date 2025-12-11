@@ -1,5 +1,6 @@
 import { readFile, writeFile, copyFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { styleText } from "node:util";
 
 export interface Patch {
@@ -269,16 +270,27 @@ export async function patchDroid(
 
   if (process.platform === "darwin") {
     console.log();
-    console.log(styleText("yellow", "Note for macOS:"));
-    console.log(
-      styleText(
-        "gray",
-        `  You may need to re-sign: codesign --force --deep --sign - ${finalOutputPath}`,
-      ),
-    );
-    console.log(
-      styleText("gray", `  Or remove quarantine: xattr -cr ${finalOutputPath}`),
-    );
+    try {
+      console.log(styleText("gray", "[*] Re-signing binary for macOS..."));
+      execSync(`codesign --force --deep --sign - "${finalOutputPath}"`, {
+        stdio: "pipe",
+      });
+      console.log(styleText("green", "[*] Binary re-signed successfully"));
+    } catch {
+      console.log(styleText("yellow", "[!] Could not re-sign binary"));
+      console.log(
+        styleText(
+          "gray",
+          `  You may need to run: codesign --force --deep --sign - ${finalOutputPath}`,
+        ),
+      );
+    }
+
+    try {
+      execSync(`xattr -cr "${finalOutputPath}"`, { stdio: "pipe" });
+    } catch {
+      // Ignore
+    }
   }
 
   return {
