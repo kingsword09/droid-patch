@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check if release commit
+        id: check_release
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [[ "$COMMIT_MSG" =~ ^chore:\ release\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "Detected release commit for version v${VERSION}"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check_release.outputs.is_release != 'true'
+        run: npm install
+
+      - name: Lint (includes type checking)
+        if: steps.check_release.outputs.is_release != 'true'
+        run: npm run lint
+
+      - name: Format check
+        if: steps.check_release.outputs.is_release != 'true'
+        run: npm run format:check

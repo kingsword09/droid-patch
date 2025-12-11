@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "es2022": true,
+    "node": true
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", "docs/**"],
+  "parserOptions": {
+    "project": "./tsconfig.json",
+    "tsconfigRootDir": ".",
+    "sourceType": "module"
+  },
+  "rules": {
+    "quotes": [
+      "error",
+      "double",
+      {
+        "allowTemplateLiterals": false,
+        "avoidEscape": true
+      }
+    ],
+    "semi": ["error", "always"],
+    "prefer-const": "error",
+    "no-console": "off",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": [
+      "error",
+      {
+        "checksVoidReturn": false
+      }
+    ]
+  }
+}

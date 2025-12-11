@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Check if release commit
+        id: check_release
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [[ "$COMMIT_MSG" =~ ^chore:\ release\ v([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "Detected release commit for version v${VERSION}"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Not a release commit, skipping"
+          fi
+
+      - name: Checkout repository
+        if: steps.check_release.outputs.is_release == 'true'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        if: steps.check_release.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.check_release.outputs.version }}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "v${PKG_VERSION}" != "${VERSION}" ]; then
+            echo "::error::Version mismatch: commit says ${VERSION} but package.json has v${PKG_VERSION}"
+            exit 1
+          fi
+          echo "Version validated: ${VERSION}"
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.is_release == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        if: steps.check_release.outputs.is_release == 'true'
+        run: npm ci
+
+      - name: Build
+        if: steps.check_release.outputs.is_release == 'true'
+        run: npm run build
+
+      - name: Create Git tag
+        if: steps.check_release.outputs.is_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          VERSION="${{ steps.check_release.outputs.version }}"
+
+          # Check if tag already exists
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists"
+          else
+            git tag "$VERSION"
+            git push origin "$VERSION"
+            echo "Created and pushed tag $VERSION"
+          fi
+
+      - name: Update npm
+        if: steps.check_release.outputs.is_release == 'true'
+        run: npm install -g npm@latest
+
+      - name: Publish to npm
+        if: steps.check_release.outputs.is_release == 'true'
+        run: npm publish --access public
+
+      - name: Generate changelog and create release
+        if: steps.check_release.outputs.is_release == 'true'
+        run: npx changelogithub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,7 +1,8 @@
 {
   "name": "droid-patch",
-  "version": "0.1.0",
-  "homepage": "https://github.com/kingsword09/droid-patch/tree/main#readme",
+  "version": "0.0.0",
+  "description": "CLI tool to patch droid binary with various modifications",
+  "homepage": "https://github.com/kingsword09/droid-patch#readme",
   "bugs": {
     "url": "https://github.com/kingsword09/droid-patch/issues"
   },
@@ -10,13 +11,24 @@
     "url": "git+https://github.com/kingsword09/droid-patch.git"
   },
   "type": "module",
-  "main": "src/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "droid-patch": "./src/cli.js"
+    "droid-patch": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "start": "node src/cli.js",
-    "test": "node src/cli.js --help"
+    "build": "npx tsdown",
+    "dev": "npx tsdown --watch",
+    "start": "node dist/cli.js",
+    "test": "node dist/cli.js --help",
+    "lint": "oxlint --type-aware --type-check",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "droid",
@@ -27,10 +39,17 @@
   "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "commander": "^12.1.0",
-    "chalk": "^5.3.0"
+    "tiny-bin": "^1.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "oxfmt": "^0.13.0",
+    "oxlint": "^1.32.0",
+    "oxlint-tsgolint": "^0.8.5",
+    "tsdown": "^0.9.3",
+    "typescript": "^5.7.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }
