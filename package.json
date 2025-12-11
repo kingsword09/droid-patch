@@ -1,0 +1,36 @@
+{
+  "name": "droid-patch",
+  "version": "0.1.0",
+  "homepage": "https://github.com/kingsword09/droid-patch/tree/main#readme",
+  "bugs": {
+    "url": "https://github.com/kingsword09/droid-patch/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kingsword09/droid-patch.git"
+  },
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "droid-patch": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "test": "node src/cli.js --help"
+  },
+  "keywords": [
+    "droid",
+    "patch",
+    "binary",
+    "cli"
+  ],
+  "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "chalk": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
