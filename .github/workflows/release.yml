@@ -55,17 +55,13 @@ jobs:
           node-version: 20
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Setup Bun
-        if: steps.check_release.outputs.is_release == 'true'
-        uses: oven-sh/setup-bun@v1
-
       - name: Install dependencies
         if: steps.check_release.outputs.is_release == 'true'
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Build
         if: steps.check_release.outputs.is_release == 'true'
-        run: bun run build
+        run: npm run build
 
       - name: Create Git tag
         if: steps.check_release.outputs.is_release == 'true'
@@ -94,6 +90,6 @@ jobs:
 
       - name: Generate changelog and create release
         if: steps.check_release.outputs.is_release == 'true'
-        run: bunx --bun changelogithub
+        run: npx changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

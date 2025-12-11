@@ -136,4 +136,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .action(async ({ args }) => {
     await removeAlias(args[0] as string);
   })
-  .run();
+  .run()
+  .catch((err: Error) => {
+    console.error(err);
+    process.exit(1);
+  });
