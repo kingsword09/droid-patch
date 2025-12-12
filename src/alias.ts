@@ -57,7 +57,7 @@ function checkPathInclusion(): boolean {
   return pathEnv.split(":").includes(ALIASES_DIR);
 }
 
-function findWritablePathDir(): string | null {
+export function findWritablePathDir(): string | null {
   const pathEnv = process.env.PATH || "";
   const pathDirs = pathEnv.split(":");
 
@@ -365,6 +365,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
 
   let removed = false;
 
+  // Check common PATH directories for symlinks
   for (const pathDir of COMMON_PATH_DIRS) {
     const pathSymlink = join(pathDir, aliasName);
     if (existsSync(pathSymlink)) {
@@ -372,7 +373,8 @@ export async function removeAlias(aliasName: string): Promise<void> {
         const stats = lstatSync(pathSymlink);
         if (stats.isSymbolicLink()) {
           const target = await readlink(pathSymlink);
-          if (target.includes(".droid-patch/bins")) {
+          // Support both regular aliases (.droid-patch/bins) and websearch wrappers (.droid-patch/websearch)
+          if (target.includes(".droid-patch/bins") || target.includes(".droid-patch/websearch")) {
             await unlink(pathSymlink);
             console.log(styleText("green", `    Removed: ${pathSymlink}`));
             removed = true;
@@ -384,6 +386,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
     }
   }
 
+  // Check aliases directory
   const symlinkPath = join(ALIASES_DIR, aliasName);
   if (existsSync(symlinkPath)) {
     await unlink(symlinkPath);
@@ -391,10 +394,35 @@ export async function removeAlias(aliasName: string): Promise<void> {
     removed = true;
   }
 
+  // Remove binary if exists
   const binaryPath = join(BINS_DIR, `${aliasName}-patched`);
   if (existsSync(binaryPath)) {
     await unlink(binaryPath);
     console.log(styleText("green", `    Removed binary: ${binaryPath}`));
+    removed = true;
+  }
+
+  // Remove websearch wrapper and related files if exist
+  const websearchDir = join(DROID_PATCH_DIR, "websearch");
+  const wrapperPath = join(websearchDir, aliasName);
+  const proxyPath = join(websearchDir, `${aliasName}-proxy.js`);
+  const preloadPath = join(websearchDir, `${aliasName}-preload.js`);
+
+  if (existsSync(wrapperPath)) {
+    await unlink(wrapperPath);
+    console.log(styleText("green", `    Removed wrapper: ${wrapperPath}`));
+    removed = true;
+  }
+
+  if (existsSync(proxyPath)) {
+    await unlink(proxyPath);
+    console.log(styleText("green", `    Removed proxy: ${proxyPath}`));
+    removed = true;
+  }
+
+  if (existsSync(preloadPath)) {
+    await unlink(preloadPath);
+    console.log(styleText("green", `    Removed preload: ${preloadPath}`));
     removed = true;
   }
 
@@ -435,7 +463,8 @@ export async function listAliases(): Promise<void> {
           const stats = lstatSync(fullPath);
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
-            if (target.includes(".droid-patch/bins")) {
+            // Support both regular aliases and websearch wrappers
+            if (target.includes(".droid-patch/bins") || target.includes(".droid-patch/websearch")) {
               aliases.push({
                 name: file,
                 target,
@@ -597,6 +626,157 @@ export async function replaceOriginal(
   return {
     originalPath,
     backupPath: latestBackupPath,
+  };
+}
+
+/**
+ * Create alias for wrapper script
+ * Unlike createAlias, this function creates symlink pointing to wrapper script
+ * Used for features like websearch that require preprocessing
+ */
+export async function createAliasForWrapper(
+  wrapperPath: string,
+  aliasName: string,
+  verbose = false,
+): Promise<CreateAliasResult> {
+  ensureDirectories();
+
+  console.log(
+    styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`),
+  );
+
+  const writablePathDir = findWritablePathDir();
+
+  if (writablePathDir) {
+    const targetPath = join(writablePathDir, aliasName);
+
+    if (verbose) {
+      console.log(styleText("gray", `    Wrapper: ${wrapperPath}`));
+    }
+
+    if (existsSync(targetPath)) {
+      await unlink(targetPath);
+      if (verbose) {
+        console.log(styleText("gray", `    Removed existing: ${targetPath}`));
+      }
+    }
+
+    await symlink(wrapperPath, targetPath);
+
+    console.log(
+      styleText("green", `[*] Created: ${targetPath} -> ${wrapperPath}`),
+    );
+    console.log();
+    console.log(styleText("green", "─".repeat(60)));
+    console.log(
+      styleText(["green", "bold"], "  ALIAS READY - NO ACTION REQUIRED!"),
+    );
+    console.log(styleText("green", "─".repeat(60)));
+    console.log();
+    console.log(
+      styleText(
+        "white",
+        `The alias "${styleText(["cyan", "bold"], aliasName)}" is now available in ALL terminals.`,
+      ),
+    );
+    console.log(styleText("gray", `(Installed to: ${writablePathDir})`));
+
+    return {
+      aliasPath: targetPath,
+      binaryPath: wrapperPath,
+      immediate: true,
+    };
+  }
+
+  // Fallback: use ~/.droid-patch/aliases
+  console.log(
+    styleText(
+      "yellow",
+      "[*] No writable PATH directory found, using fallback...",
+    ),
+  );
+
+  const symlinkPath = join(ALIASES_DIR, aliasName);
+
+  if (existsSync(symlinkPath)) {
+    await unlink(symlinkPath);
+    if (verbose) {
+      console.log(styleText("gray", `    Removed existing symlink`));
+    }
+  }
+
+  await symlink(wrapperPath, symlinkPath);
+
+  console.log(
+    styleText("green", `[*] Created symlink: ${symlinkPath} -> ${wrapperPath}`),
+  );
+
+  const shellConfig = getShellConfigPath();
+
+  if (!checkPathInclusion()) {
+    if (!isPathConfigured(shellConfig)) {
+      console.log(
+        styleText("white", `[*] Configuring PATH in ${shellConfig}...`),
+      );
+
+      if (addPathToShellConfig(shellConfig, verbose)) {
+        console.log(styleText("green", `[*] PATH configured successfully!`));
+        console.log();
+        console.log(styleText("yellow", "─".repeat(60)));
+        console.log(styleText(["yellow", "bold"], "  ACTION REQUIRED"));
+        console.log(styleText("yellow", "─".repeat(60)));
+        console.log();
+        console.log(
+          styleText("white", "To use the alias in this terminal, run:"),
+        );
+        console.log();
+        console.log(styleText("cyan", `  source ${shellConfig}`));
+        console.log();
+        console.log(styleText("gray", "Or simply open a new terminal window."));
+        console.log(styleText("yellow", "─".repeat(60)));
+      } else {
+        const exportLine = `export PATH="${ALIASES_DIR}:$PATH"`;
+        console.log();
+        console.log(styleText("yellow", "─".repeat(60)));
+        console.log(
+          styleText(["yellow", "bold"], "  Manual PATH Configuration Required"),
+        );
+        console.log(styleText("yellow", "─".repeat(60)));
+        console.log();
+        console.log(styleText("white", "Add this line to your shell config:"));
+        console.log(styleText("cyan", `  ${exportLine}`));
+        console.log();
+        console.log(styleText("gray", `Shell config file: ${shellConfig}`));
+        console.log(styleText("yellow", "─".repeat(60)));
+      }
+    } else {
+      console.log(
+        styleText("green", `[*] PATH already configured in ${shellConfig}`),
+      );
+      console.log();
+      console.log(
+        styleText(
+          "yellow",
+          `Note: Run \`source ${shellConfig}\` or open a new terminal to use the alias.`,
+        ),
+      );
+    }
+  } else {
+    console.log(
+      styleText("green", `[*] PATH already includes aliases directory`),
+    );
+    console.log();
+    console.log(
+      styleText(
+        "green",
+        `You can now use "${styleText(["cyan", "bold"], aliasName)}" command directly!`,
+      ),
+    );
+  }
+
+  return {
+    aliasPath: symlinkPath,
+    binaryPath: wrapperPath,
   };
 }
 
