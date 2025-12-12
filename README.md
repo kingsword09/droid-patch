@@ -80,6 +80,26 @@ npx droid-patch remove /path/to/patched-binary
 npx droid-patch proxy-status
 ```
 
+### Update Aliases
+
+When the original droid binary is updated, you can re-apply patches to all aliases:
+
+```bash
+# Update all aliases with new droid binary
+npx droid-patch update
+
+# Update a specific alias
+npx droid-patch update <alias-name>
+
+# Preview without making changes
+npx droid-patch update --dry-run
+
+# Use a different droid binary
+npx droid-patch update -p /path/to/new/droid
+```
+
+The update command reads metadata stored when aliases were created and re-applies the same patches automatically.
+
 ### Check Version
 
 ```bash

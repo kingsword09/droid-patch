@@ -12,6 +12,13 @@ import {
   createAliasForWrapper,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
+import {
+  saveAliasMetadata,
+  createMetadata,
+  loadAliasMetadata,
+  listAllMetadata,
+  formatPatches,
+} from "./metadata.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -106,6 +113,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       // Create alias pointing to wrapper
       await createAliasForWrapper(wrapperScript, alias, verbose);
+
+      // Save metadata for update command
+      const metadata = createMetadata(alias, path, {
+        isCustom: false,
+        skipLogin: false,
+        apiBase: null,
+        websearch: true,
+      });
+      await saveAliasMetadata(metadata);
 
       console.log();
       console.log(styleText("green", "═".repeat(60)));
@@ -392,6 +408,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         } else {
           await createAlias(result.outputPath, alias, verbose);
         }
+
+        // Save metadata for update command
+        const metadata = createMetadata(alias, path, {
+          isCustom: !!isCustom,
+          skipLogin: !!skipLogin,
+          apiBase: apiBase || null,
+          websearch: !!webSearch,
+        });
+        await saveAliasMetadata(metadata);
       }
 
       if (result.success) {
@@ -587,6 +612,229 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     console.log(styleText("cyan", "═".repeat(60)));
     console.log();
     console.log(lines.join("\n"));
+  })
+  .command("update", "Update aliases with latest droid binary")
+  .argument(
+    "[alias]",
+    "Specific alias to update (optional, updates all if not specified)",
+  )
+  .option("--dry-run", "Preview without making changes")
+  .option("-p, --path <path>", "Path to new droid binary")
+  .option("-v, --verbose", "Enable verbose output")
+  .action(async (options, args) => {
+    const aliasName = args?.[0] as string | undefined;
+    const dryRun = options["dry-run"] as boolean;
+    const newBinaryPath = (options.path as string) || findDefaultDroidPath();
+    const verbose = options.verbose as boolean;
+
+    console.log(styleText("cyan", "═".repeat(60)));
+    console.log(styleText(["cyan", "bold"], "  Droid-Patch Update"));
+    console.log(styleText("cyan", "═".repeat(60)));
+    console.log();
+
+    // Verify the new binary exists
+    if (!existsSync(newBinaryPath)) {
+      console.log(
+        styleText("red", `Error: Droid binary not found at ${newBinaryPath}`),
+      );
+      console.log(styleText("gray", "Use -p to specify a different path"));
+      process.exit(1);
+    }
+
+    // Get aliases to update
+    let metaList: Awaited<ReturnType<typeof loadAliasMetadata>>[];
+    if (aliasName) {
+      const meta = await loadAliasMetadata(aliasName);
+      if (!meta) {
+        console.log(
+          styleText("red", `Error: No metadata found for alias "${aliasName}"`),
+        );
+        console.log(
+          styleText(
+            "gray",
+            "This alias may have been created before update tracking was added.",
+          ),
+        );
+        console.log(
+          styleText(
+            "gray",
+            "Remove and recreate the alias to enable update support.",
+          ),
+        );
+        process.exit(1);
+      }
+      metaList = [meta];
+    } else {
+      metaList = await listAllMetadata();
+      if (metaList.length === 0) {
+        console.log(styleText("yellow", "No aliases with metadata found."));
+        console.log(
+          styleText(
+            "gray",
+            "Create aliases with droid-patch to enable update support.",
+          ),
+        );
+        process.exit(0);
+      }
+    }
+
+    console.log(styleText("white", `Using droid binary: ${newBinaryPath}`));
+    console.log(
+      styleText("white", `Found ${metaList.length} alias(es) to update`),
+    );
+    if (dryRun) {
+      console.log(styleText("blue", "(DRY RUN - no changes will be made)"));
+    }
+    console.log();
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const meta of metaList) {
+      if (!meta) continue;
+
+      console.log(styleText("cyan", `─`.repeat(40)));
+      console.log(
+        styleText(
+          "white",
+          `Updating: ${styleText(["cyan", "bold"], meta.name)}`,
+        ),
+      );
+      console.log(
+        styleText("gray", `  Patches: ${formatPatches(meta.patches)}`),
+      );
+
+      if (dryRun) {
+        console.log(styleText("blue", `  [DRY RUN] Would re-apply patches`));
+        successCount++;
+        continue;
+      }
+
+      try {
+        // Build patch list based on metadata
+        const patches: Patch[] = [];
+
+        if (meta.patches.isCustom) {
+          patches.push({
+            name: "isCustom",
+            description: "Change isCustom:!0 to isCustom:!1",
+            pattern: Buffer.from("isCustom:!0"),
+            replacement: Buffer.from("isCustom:!1"),
+          });
+        }
+
+        if (meta.patches.skipLogin) {
+          patches.push({
+            name: "skipLogin",
+            description: "Replace process.env.FACTORY_API_KEY with fake key",
+            pattern: Buffer.from("process.env.FACTORY_API_KEY"),
+            replacement: Buffer.from('"fk-droid-patch-skip-00000"'),
+          });
+        }
+
+        if (meta.patches.apiBase) {
+          const originalUrl = "https://api.factory.ai";
+          const paddedUrl = meta.patches.apiBase.padEnd(
+            originalUrl.length,
+            " ",
+          );
+          patches.push({
+            name: "apiBase",
+            description: `Replace Factory API URL with "${meta.patches.apiBase}"`,
+            pattern: Buffer.from(originalUrl),
+            replacement: Buffer.from(paddedUrl),
+          });
+        }
+
+        // Determine output path based on whether this is a websearch alias
+        const binsDir = join(homedir(), ".droid-patch", "bins");
+        const outputPath = join(binsDir, `${meta.name}-patched`);
+
+        // Apply patches (only if there are binary patches to apply)
+        if (patches.length > 0) {
+          const result = await patchDroid({
+            inputPath: newBinaryPath,
+            outputPath,
+            patches,
+            dryRun: false,
+            backup: false,
+            verbose,
+          });
+
+          if (!result.success) {
+            console.log(styleText("red", `  ✗ Failed to apply patches`));
+            failCount++;
+            continue;
+          }
+
+          // Re-sign on macOS
+          if (process.platform === "darwin") {
+            try {
+              const { execSync } = await import("node:child_process");
+              execSync(`codesign --force --deep --sign - "${outputPath}"`, {
+                stdio: "pipe",
+              });
+              if (verbose) {
+                console.log(styleText("gray", `  Re-signed binary`));
+              }
+            } catch {
+              console.log(
+                styleText("yellow", `  [!] Could not re-sign binary`),
+              );
+            }
+          }
+        }
+
+        // If websearch is enabled, regenerate wrapper files
+        if (meta.patches.websearch) {
+          const websearchDir = join(homedir(), ".droid-patch", "websearch");
+          const targetBinaryPath =
+            patches.length > 0 ? outputPath : newBinaryPath;
+          await createWebSearchUnifiedFiles(
+            websearchDir,
+            targetBinaryPath,
+            meta.name,
+          );
+          if (verbose) {
+            console.log(styleText("gray", `  Regenerated websearch wrapper`));
+          }
+        }
+
+        // Update metadata
+        meta.updatedAt = new Date().toISOString();
+        meta.originalBinaryPath = newBinaryPath;
+        await saveAliasMetadata(meta);
+
+        console.log(styleText("green", `  ✓ Updated successfully`));
+        successCount++;
+      } catch (error) {
+        console.log(styleText("red", `  ✗ Error: ${(error as Error).message}`));
+        if (verbose) {
+          console.error((error as Error).stack);
+        }
+        failCount++;
+      }
+    }
+
+    console.log();
+    console.log(styleText("cyan", "═".repeat(60)));
+    if (dryRun) {
+      console.log(styleText(["blue", "bold"], "  DRY RUN COMPLETE"));
+      console.log(
+        styleText("gray", `  Would update ${successCount} alias(es)`),
+      );
+    } else if (failCount === 0) {
+      console.log(styleText(["green", "bold"], "  UPDATE COMPLETE"));
+      console.log(styleText("gray", `  Updated ${successCount} alias(es)`));
+    } else {
+      console.log(
+        styleText(["yellow", "bold"], "  UPDATE FINISHED WITH ERRORS"),
+      );
+      console.log(
+        styleText("gray", `  Success: ${successCount}, Failed: ${failCount}`),
+      );
+    }
+    console.log(styleText("cyan", "═".repeat(60)));
   })
   .run()
   .catch((err: Error) => {

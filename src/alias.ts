@@ -13,6 +13,7 @@ import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
+import { removeAliasMetadata } from "./metadata.ts";
 
 const DROID_PATCH_DIR = join(homedir(), ".droid-patch");
 const ALIASES_DIR = join(DROID_PATCH_DIR, "aliases");
@@ -426,6 +427,13 @@ export async function removeAlias(aliasName: string): Promise<void> {
   if (existsSync(preloadPath)) {
     await unlink(preloadPath);
     console.log(styleText("green", `    Removed preload: ${preloadPath}`));
+    removed = true;
+  }
+
+  // Remove metadata
+  const metaRemoved = await removeAliasMetadata(aliasName);
+  if (metaRemoved) {
+    console.log(styleText("green", `    Removed metadata`));
     removed = true;
   }
 

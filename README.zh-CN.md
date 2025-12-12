@@ -80,6 +80,26 @@ npx droid-patch remove /path/to/patched-binary
 npx droid-patch proxy-status
 ```
 
+### 更新别名
+
+当原始 droid 二进制文件更新后，可以重新为所有别名应用补丁：
+
+```bash
+# 更新所有别名
+npx droid-patch update
+
+# 更新指定别名
+npx droid-patch update <alias-name>
+
+# 预览（不实际更新）
+npx droid-patch update --dry-run
+
+# 使用不同的 droid 二进制文件
+npx droid-patch update -p /path/to/new/droid
+```
+
+update 命令会读取创建别名时保存的元数据，自动重新应用相同的补丁。
+
 ### 检查版本
 
 ```bash
