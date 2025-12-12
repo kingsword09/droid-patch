@@ -374,7 +374,10 @@ export async function removeAlias(aliasName: string): Promise<void> {
         if (stats.isSymbolicLink()) {
           const target = await readlink(pathSymlink);
           // Support both regular aliases (.droid-patch/bins) and websearch wrappers (.droid-patch/websearch)
-          if (target.includes(".droid-patch/bins") || target.includes(".droid-patch/websearch")) {
+          if (
+            target.includes(".droid-patch/bins") ||
+            target.includes(".droid-patch/websearch")
+          ) {
             await unlink(pathSymlink);
             console.log(styleText("green", `    Removed: ${pathSymlink}`));
             removed = true;
@@ -464,7 +467,10 @@ export async function listAliases(): Promise<void> {
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
             // Support both regular aliases and websearch wrappers
-            if (target.includes(".droid-patch/bins") || target.includes(".droid-patch/websearch")) {
+            if (
+              target.includes(".droid-patch/bins") ||
+              target.includes(".droid-patch/websearch")
+            ) {
               aliases.push({
                 name: file,
                 target,

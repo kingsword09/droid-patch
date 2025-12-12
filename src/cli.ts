@@ -5,7 +5,12 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { patchDroid, type Patch } from "./patcher.ts";
-import { createAlias, removeAlias, listAliases, findWritablePathDir, createAliasForWrapper } from "./alias.ts";
+import {
+  createAlias,
+  removeAlias,
+  listAliases,
+  createAliasForWrapper,
+} from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -77,8 +82,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Handle --websearch only (no binary patching needed)
     if (webSearch && !isCustom && !skipLogin && !apiBase) {
       if (!alias) {
-        console.log(styleText("red", "Error: Alias name required for --websearch"));
-        console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
+        console.log(
+          styleText("red", "Error: Alias name required for --websearch"),
+        );
+        console.log(
+          styleText("gray", "Usage: npx droid-patch --websearch <alias>"),
+        );
         process.exit(1);
       }
 
@@ -89,7 +98,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       // Create unified websearch files (preload script + wrapper)
       const websearchDir = join(homedir(), ".droid-patch", "websearch");
-      const { wrapperScript, preloadScript } = await createWebSearchUnifiedFiles(
+      const { wrapperScript } = await createWebSearchUnifiedFiles(
         websearchDir,
         path,
         alias,
@@ -107,17 +116,37 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("yellow", `  ${alias}`));
       console.log();
       console.log(styleText("cyan", "Auto-shutdown:"));
-      console.log(styleText("gray", "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)"));
-      console.log(styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"));
+      console.log(
+        styleText(
+          "gray",
+          "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)",
+        ),
+      );
+      console.log(
+        styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"),
+      );
       console.log();
       console.log("Search providers (in priority order):");
       console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
-      console.log(styleText("gray", "     export SMITHERY_API_KEY=your_api_key"));
-      console.log(styleText("gray", "     export SMITHERY_PROFILE=your_profile"));
+      console.log(
+        styleText("gray", "     export SMITHERY_API_KEY=your_api_key"),
+      );
+      console.log(
+        styleText("gray", "     export SMITHERY_PROFILE=your_profile"),
+      );
       console.log(styleText("gray", "  2. Google PSE:"));
-      console.log(styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"));
-      console.log(styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"));
-      console.log(styleText("gray", "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
+      console.log(
+        styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"),
+      );
+      console.log(
+        styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"),
+      );
+      console.log(
+        styleText(
+          "gray",
+          "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)",
+        ),
+      );
       console.log();
       console.log("Debug mode:");
       console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1"));
@@ -173,10 +202,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         ),
       );
       console.log(
-        styleText(
-          "cyan",
-          "  npx droid-patch --websearch droid-search",
-        ),
+        styleText("cyan", "  npx droid-patch --websearch droid-search"),
       );
       process.exit(1);
     }
@@ -237,24 +263,24 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           ),
         );
         console.log(
-          styleText("gray", `  Your URL: "${normalizedUrl}" (${normalizedUrl.length} chars)`),
+          styleText(
+            "gray",
+            `  Your URL: "${normalizedUrl}" (${normalizedUrl.length} chars)`,
+          ),
         );
         console.log(
           styleText("gray", `  Maximum:  ${originalLength} characters`),
         );
         console.log();
         console.log(
-          styleText("yellow", "Tip: Use a shorter URL or set up a local redirect."),
+          styleText(
+            "yellow",
+            "Tip: Use a shorter URL or set up a local redirect.",
+          ),
         );
-        console.log(
-          styleText("gray", "  Examples:"),
-        );
-        console.log(
-          styleText("gray", "    http://127.0.0.1:3000 (19 chars)"),
-        );
-        console.log(
-          styleText("gray", "    http://localhost:80  (19 chars)"),
-        );
+        console.log(styleText("gray", "  Examples:"));
+        console.log(styleText("gray", "    http://127.0.0.1:3000 (19 chars)"));
+        console.log(styleText("gray", "    http://localhost:80  (19 chars)"));
         process.exit(1);
       }
 
@@ -326,8 +352,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
           console.log();
           console.log("Optional: Set Google PSE for better results:");
-          console.log(styleText("gray", "  export GOOGLE_PSE_API_KEY=your_api_key"));
-          console.log(styleText("gray", "  export GOOGLE_PSE_CX=your_search_engine_id"));
+          console.log(
+            styleText("gray", "  export GOOGLE_PSE_API_KEY=your_api_key"),
+          );
+          console.log(
+            styleText("gray", "  export GOOGLE_PSE_CX=your_search_engine_id"),
+          );
         } else {
           await createAlias(result.outputPath, alias, verbose);
         }
@@ -390,7 +420,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     try {
       const response = await fetch(`http://127.0.0.1:${port}/health`);
       if (response.ok) {
-        const data = await response.json() as {
+        const data = (await response.json()) as {
           status: string;
           port: number;
           idleTimeout?: number;
@@ -409,7 +439,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         // Show droid running status
         if (data.droidRunning !== undefined) {
-          console.log(styleText("white", `  Droid running: ${data.droidRunning ? "yes (proxy will stay alive)" : "no"}`));
+          console.log(
+            styleText(
+              "white",
+              `  Droid running: ${data.droidRunning ? "yes (proxy will stay alive)" : "no"}`,
+            ),
+          );
         }
 
         // Show idle timeout info
@@ -418,12 +453,24 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             const idleMins = Math.floor((data.idleSeconds || 0) / 60);
             const idleSecs = (data.idleSeconds || 0) % 60;
             if (data.droidRunning) {
-              console.log(styleText("white", `  Idle: ${idleMins}m ${idleSecs}s (won't shutdown while droid runs)`));
+              console.log(
+                styleText(
+                  "white",
+                  `  Idle: ${idleMins}m ${idleSecs}s (won't shutdown while droid runs)`,
+                ),
+              );
             } else if (data.willShutdownIn !== null) {
               const shutdownMins = Math.floor((data.willShutdownIn || 0) / 60);
               const shutdownSecs = (data.willShutdownIn || 0) % 60;
-              console.log(styleText("white", `  Idle: ${idleMins}m ${idleSecs}s`));
-              console.log(styleText("white", `  Auto-shutdown in: ${shutdownMins}m ${shutdownSecs}s`));
+              console.log(
+                styleText("white", `  Idle: ${idleMins}m ${idleSecs}s`),
+              );
+              console.log(
+                styleText(
+                  "white",
+                  `  Auto-shutdown in: ${shutdownMins}m ${shutdownSecs}s`,
+                ),
+              );
             }
           } else {
             console.log(styleText("white", `  Auto-shutdown: disabled`));
@@ -441,8 +488,18 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     } catch {
       console.log(styleText("yellow", `  Status: Not running`));
       console.log();
-      console.log(styleText("gray", "The proxy will start automatically when you run droid-full."));
-      console.log(styleText("gray", "It will auto-shutdown after 5 minutes of idle (configurable)."));
+      console.log(
+        styleText(
+          "gray",
+          "The proxy will start automatically when you run droid-full.",
+        ),
+      );
+      console.log(
+        styleText(
+          "gray",
+          "It will auto-shutdown after 5 minutes of idle (configurable).",
+        ),
+      );
     }
     console.log();
   })
@@ -464,7 +521,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       console.log(styleText("green", `[*] Proxy stopped (PID: ${pid})`));
     } catch (error) {
-      console.log(styleText("yellow", `[!] Could not stop proxy: ${(error as Error).message}`));
+      console.log(
+        styleText(
+          "yellow",
+          `[!] Could not stop proxy: ${(error as Error).message}`,
+        ),
+      );
 
       // Clean up stale PID file
       try {
@@ -488,7 +550,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const lines = log.split("\n").slice(-50); // Last 50 lines
 
     console.log(styleText("cyan", "═".repeat(60)));
-    console.log(styleText(["cyan", "bold"], "  WebSearch Proxy Logs (last 50 lines)"));
+    console.log(
+      styleText(["cyan", "bold"], "  WebSearch Proxy Logs (last 50 lines)"),
+    );
     console.log(styleText("cyan", "═".repeat(60)));
     console.log();
     console.log(lines.join("\n"));
