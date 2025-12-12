@@ -353,7 +353,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           console.log();
           console.log(styleText("cyan", "WebSearch providers (optional):"));
           console.log(
-            styleText("gray", "  Works out of the box with DuckDuckGo fallback"),
+            styleText(
+              "gray",
+              "  Works out of the box with DuckDuckGo fallback",
+            ),
           );
           console.log(
             styleText("gray", "  For better results, configure a provider:"),
@@ -364,18 +367,27 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             styleText("gray", " - Best quality, free via smithery.ai"),
           );
           console.log(
-            styleText("gray", "    export SMITHERY_API_KEY=... SMITHERY_PROFILE=..."),
+            styleText(
+              "gray",
+              "    export SMITHERY_API_KEY=... SMITHERY_PROFILE=...",
+            ),
           );
           console.log(
             styleText("yellow", "  Google PSE"),
             styleText("gray", " - 10,000/day free"),
           );
           console.log(
-            styleText("gray", "    export GOOGLE_PSE_API_KEY=... GOOGLE_PSE_CX=..."),
+            styleText(
+              "gray",
+              "    export GOOGLE_PSE_API_KEY=... GOOGLE_PSE_CX=...",
+            ),
           );
           console.log();
           console.log(
-            styleText("gray", "  See README for all providers and setup guides"),
+            styleText(
+              "gray",
+              "  See README for all providers and setup guides",
+            ),
           );
         } else {
           await createAlias(result.outputPath, alias, verbose);
