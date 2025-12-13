@@ -68,6 +68,10 @@ export async function patchDroid(
   const data = await readFile(inputPath);
   const buffer = Buffer.from(data);
 
+  // Use a working buffer that gets updated after each patch application
+  // This ensures later patches search against the already-patched content
+  const workingBuffer = Buffer.from(buffer);
+
   const results: PatchResult[] = [];
 
   for (const patch of patches) {
@@ -79,7 +83,8 @@ export async function patchDroid(
     );
     console.log(styleText("gray", `    ${patch.description}`));
 
-    const positions = findAllPositions(buffer, patch.pattern);
+    // Search in the working buffer (which may have earlier patches applied)
+    const positions = findAllPositions(workingBuffer, patch.pattern);
 
     if (positions.length === 0) {
       console.log(
@@ -89,10 +94,13 @@ export async function patchDroid(
         name: patch.name,
         found: 0,
         success: false,
-        alreadyPatched: buffer.includes(patch.replacement),
+        alreadyPatched: workingBuffer.includes(patch.replacement),
       });
 
-      const replacementPositions = findAllPositions(buffer, patch.replacement);
+      const replacementPositions = findAllPositions(
+        workingBuffer,
+        patch.replacement,
+      );
       if (replacementPositions.length > 0) {
         console.log(
           styleText(
@@ -115,7 +123,12 @@ export async function patchDroid(
 
     if (verbose) {
       for (const pos of positions.slice(0, 5)) {
-        const context = getContext(buffer, pos, patch.pattern.length, 25);
+        const context = getContext(
+          workingBuffer,
+          pos,
+          patch.pattern.length,
+          25,
+        );
         console.log(
           styleText(
             "gray",
@@ -127,6 +140,13 @@ export async function patchDroid(
         console.log(
           styleText("gray", `      ... and ${positions.length - 5} more`),
         );
+      }
+    }
+
+    // Apply patch immediately to working buffer so later patches see updated content
+    if (!dryRun) {
+      for (const pos of positions) {
+        patch.replacement.copy(workingBuffer, pos);
       }
     }
 
@@ -210,22 +230,16 @@ export async function patchDroid(
   }
 
   console.log(styleText("white", "[*] Applying patches..."));
-  const patchedBuffer = Buffer.from(buffer);
-
-  let totalPatched = 0;
-  for (const patch of patches) {
-    const result = results.find((r) => r.name === patch.name);
-    if (!result || !result.positions) continue;
-
-    for (const pos of result.positions) {
-      patch.replacement.copy(patchedBuffer, pos);
-      totalPatched++;
-    }
-  }
+  // Patches have already been applied to workingBuffer during the check phase
+  // Count total patches applied
+  const totalPatched = results.reduce(
+    (sum, r) => sum + (r.positions?.length || 0),
+    0,
+  );
 
   console.log(styleText("green", `[*] Applied ${totalPatched} patches`));
 
-  await writeFile(finalOutputPath, patchedBuffer);
+  await writeFile(finalOutputPath, workingBuffer);
   console.log(
     styleText(
       "white",

@@ -196,6 +196,7 @@ droid-search
 1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high"]`
 2. 将 `defaultReasoningEffort` 从 `"none"` 改为 `"high"`
 3. 启用推理强度 UI 选择器（通常对自定义模型隐藏）
+4. 绕过验证以允许通过 settings.json 设置 `xhigh`
 
 **用途**：允许自定义模型使用通常仅对官方模型可用的推理强度功能。
 
@@ -213,6 +214,29 @@ npx droid-patch --reasoning-effort droid-reasoning
 # 与其他补丁组合使用
 npx droid-patch --is-custom --reasoning-effort droid-full
 ```
+
+**配置 `xhigh` 推理强度**：
+
+默认推理强度为 `high`。要使用 `xhigh`（超高），请编辑设置文件：
+
+```bash
+# 编辑 ~/.factory/settings.json
+{
+  "model": "custom:Your-Model-0",
+  "reasoningEffort": "xhigh",
+  // ... 其他设置
+}
+```
+
+可用的值：
+| 值 | 描述 |
+|-------|-------------|
+| `high` | 高推理强度（补丁后的默认值） |
+| `xhigh` | 超高推理强度 |
+| `medium` | 中等推理强度 |
+| `low` | 低推理强度 |
+
+**注意**：`xhigh` 值会绕过验证直接发送到 API。请确保您的自定义模型/代理支持此参数。
 
 ---
 

@@ -196,6 +196,7 @@ Enables reasoning effort control for custom models by patching the binary to:
 1. Set `supportedReasoningEfforts` from `["none"]` to `["high"]`
 2. Set `defaultReasoningEffort` from `"none"` to `"high"`
 3. Enable the reasoning effort UI selector (normally hidden for custom models)
+4. Bypass validation to allow `xhigh` via settings.json
 
 **Purpose**: Allow custom models to use reasoning effort features that are normally only available for official models.
 
@@ -213,6 +214,29 @@ npx droid-patch --reasoning-effort droid-reasoning
 # Combine with other patches
 npx droid-patch --is-custom --reasoning-effort droid-full
 ```
+
+**Configuring `xhigh` Reasoning Effort**:
+
+The default reasoning effort is `high`. To use `xhigh` (extra high), edit your settings file:
+
+```bash
+# Edit ~/.factory/settings.json
+{
+  "model": "custom:Your-Model-0",
+  "reasoningEffort": "xhigh",
+  // ... other settings
+}
+```
+
+Available values:
+| Value | Description |
+|-------|-------------|
+| `high` | High reasoning effort (default after patching) |
+| `xhigh` | Extra high reasoning effort |
+| `medium` | Medium reasoning effort |
+| `low` | Low reasoning effort |
+
+**Note**: The `xhigh` value bypasses validation and is sent directly to your API. Make sure your custom model/proxy supports this parameter.
 
 ---
 

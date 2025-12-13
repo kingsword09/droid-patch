@@ -395,6 +395,20 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
         replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
       });
+
+      // Bypass reasoning effort validation to allow settings.json override
+      // This allows "xhigh" in settings.json to work even though default is "high"
+      // Original: if(R&&!B.supportedReasoningEfforts.includes(R)) throw error
+      // Changed:  if(0&&...) - never throws, any value is accepted
+      patches.push({
+        name: "reasoningEffortValidationBypass",
+        description:
+          "Bypass reasoning effort validation (allows xhigh in settings.json)",
+        pattern: Buffer.from("if(R&&!B.supportedReasoningEfforts.includes(R))"),
+        replacement: Buffer.from(
+          "if(0&&!B.supportedReasoningEfforts.includes(R))",
+        ),
+      });
     }
 
     try {
@@ -859,6 +873,17 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
               "Change supportedReasoningEfforts.length<=1 to length<=0",
             pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
             replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
+          });
+          patches.push({
+            name: "reasoningEffortValidationBypass",
+            description:
+              "Bypass reasoning effort validation (allows xhigh in settings.json)",
+            pattern: Buffer.from(
+              "if(R&&!B.supportedReasoningEfforts.includes(R))",
+            ),
+            replacement: Buffer.from(
+              "if(0&&!B.supportedReasoningEfforts.includes(R))",
+            ),
           });
         }
 
