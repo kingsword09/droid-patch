@@ -29,6 +29,7 @@ export interface AliasMetadata {
     skipLogin: boolean;
     apiBase: string | null;
     websearch: boolean;
+    reasoningEffort: boolean;
   };
 }
 
@@ -144,5 +145,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.skipLogin) applied.push("skipLogin");
   if (patches.apiBase) applied.push(`apiBase(${patches.apiBase})`);
   if (patches.websearch) applied.push("websearch");
+  if (patches.reasoningEffort) applied.push("reasoningEffort");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }

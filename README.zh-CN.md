@@ -26,8 +26,11 @@ npx droid-patch --skip-login droid-nologin
 # 使用 --websearch 启用本地搜索代理
 npx droid-patch --websearch droid-search
 
+# 使用 --reasoning-effort 为自定义模型启用推理功能
+npx droid-patch --reasoning-effort droid-reasoning
+
 # 组合多个修补选项
-npx droid-patch --is-custom --skip-login --websearch droid-full
+npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
 # 指定 droid 二进制文件路径
 npx droid-patch --skip-login -p /path/to/droid my-droid
@@ -57,6 +60,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login` | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证 |
 | `--api-base <url>` | 将 Factory API URL 替换为自定义服务器（最多 22 个字符） |
 | `--websearch` | 注入本地 WebSearch 代理，支持多个搜索提供商 |
+| `--reasoning-effort` | 为自定义模型启用推理强度 UI 选择器（设置为 high） |
 | `--dry-run` | 验证修补但不实际修改二进制文件 |
 | `-p, --path <path>` | droid 二进制文件路径（默认：`~/.droid/bin/droid`） |
 | `-o, --output <dir>` | 修补后二进制文件的输出目录（直接创建文件，不创建别名） |
@@ -184,6 +188,30 @@ npx droid-patch --websearch droid-search
 
 # 直接运行 - 一切都是自动的！
 droid-search
+```
+
+### `--reasoning-effort`
+
+通过修补二进制文件为自定义模型启用推理强度控制：
+1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high"]`
+2. 将 `defaultReasoningEffort` 从 `"none"` 改为 `"high"`
+3. 启用推理强度 UI 选择器（通常对自定义模型隐藏）
+
+**用途**：允许自定义模型使用通常仅对官方模型可用的推理强度功能。
+
+**工作原理**：
+- 当 `supportedReasoningEfforts.length > 1` 时，droid UI 会显示推理强度选择器
+- 自定义模型硬编码为 `["none"]`，隐藏了选择器
+- 此补丁将值改为 `["high"]` 并修改 UI 条件以显示选择器
+- 推理强度设置将发送到您的自定义模型 API
+
+**使用方法**：
+```bash
+# 为自定义模型启用推理强度
+npx droid-patch --reasoning-effort droid-reasoning
+
+# 与其他补丁组合使用
+npx droid-patch --is-custom --reasoning-effort droid-full
 ```
 
 ---

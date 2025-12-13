@@ -26,8 +26,11 @@ npx droid-patch --skip-login droid-nologin
 # Patch with --websearch to enable local search proxy
 npx droid-patch --websearch droid-search
 
+# Patch with --reasoning-effort to enable reasoning for custom models
+npx droid-patch --reasoning-effort droid-reasoning
+
 # Combine multiple patches
-npx droid-patch --is-custom --skip-login --websearch droid-full
+npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
 # Specify a custom path to the droid binary
 npx droid-patch --skip-login -p /path/to/droid my-droid
@@ -57,6 +60,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login` | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary |
 | `--api-base <url>` | Replace Factory API URL with a custom server (max 22 chars) |
 | `--websearch` | Inject local WebSearch proxy with multiple search providers |
+| `--reasoning-effort` | Enable reasoning effort UI selector for custom models (set to high) |
 | `--dry-run` | Verify patches without actually modifying the binary |
 | `-p, --path <path>` | Path to the droid binary (default: `~/.droid/bin/droid`) |
 | `-o, --output <dir>` | Output directory for patched binary (creates file without alias) |
@@ -184,6 +188,30 @@ npx droid-patch --websearch droid-search
 
 # Just run it - everything is automatic!
 droid-search
+```
+
+### `--reasoning-effort`
+
+Enables reasoning effort control for custom models by patching the binary to:
+1. Set `supportedReasoningEfforts` from `["none"]` to `["high"]`
+2. Set `defaultReasoningEffort` from `"none"` to `"high"`
+3. Enable the reasoning effort UI selector (normally hidden for custom models)
+
+**Purpose**: Allow custom models to use reasoning effort features that are normally only available for official models.
+
+**How it works**:
+- The droid UI shows a reasoning effort selector when `supportedReasoningEfforts.length > 1`
+- Custom models are hardcoded with `["none"]`, hiding the selector
+- This patch changes the value to `["high"]` and modifies the UI condition to show the selector
+- The reasoning effort setting will be sent to your custom model's API
+
+**Usage**:
+```bash
+# Enable reasoning effort for custom models
+npx droid-patch --reasoning-effort droid-reasoning
+
+# Combine with other patches
+npx droid-patch --is-custom --reasoning-effort droid-full
 ```
 
 ---

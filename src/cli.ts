@@ -65,6 +65,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--websearch",
     "Enable local WebSearch via fetch hook (Google PSE + DuckDuckGo fallback)",
   )
+  .option(
+    "--reasoning-effort",
+    "Enable reasoning effort for custom models (set to high, enable UI selector)",
+  )
   .option("--dry-run", "Verify patches without actually modifying the binary")
   .option("-p, --path <path>", "Path to the droid binary")
   .option("-o, --output <dir>", "Output directory for patched binary")
@@ -77,6 +81,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const webSearch = options["websearch"] as boolean;
+    const reasoningEffort = options["reasoning-effort"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
     const outputDir = options.output as string | undefined;
@@ -120,6 +125,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         skipLogin: false,
         apiBase: null,
         websearch: true,
+        reasoningEffort: null,
       });
       await saveAliasMetadata(metadata);
 
@@ -169,29 +175,35 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       return;
     }
 
-    if (!isCustom && !skipLogin && !apiBase && !webSearch) {
+    if (!isCustom && !skipLogin && !apiBase && !webSearch && !reasoningEffort) {
       console.log(
         styleText("yellow", "No patch flags specified. Available patches:"),
       );
       console.log(
-        styleText("gray", "  --is-custom    Patch isCustom for custom models"),
+        styleText("gray", "  --is-custom         Patch isCustom for custom models"),
       );
       console.log(
         styleText(
           "gray",
-          "  --skip-login   Bypass login by injecting a fake API key",
+          "  --skip-login        Bypass login by injecting a fake API key",
         ),
       );
       console.log(
         styleText(
           "gray",
-          "  --api-base     Replace Factory API URL with custom server",
+          "  --api-base          Replace Factory API URL with custom server",
         ),
       );
       console.log(
         styleText(
           "gray",
-          "  --websearch    Enable local WebSearch (Google PSE + DuckDuckGo)",
+          "  --websearch         Enable local WebSearch (Google PSE + DuckDuckGo)",
+        ),
+      );
+      console.log(
+        styleText(
+          "gray",
+          "  --reasoning-effort  Set reasoning effort level for custom models",
         ),
       );
       console.log();
@@ -219,6 +231,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       );
       console.log(
         styleText("cyan", "  npx droid-patch --websearch droid-search"),
+      );
+      console.log(
+        styleText(
+          "cyan",
+          "  npx droid-patch --reasoning-effort high droid-reasoning",
+        ),
       );
       process.exit(1);
     }
@@ -309,6 +327,44 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         description: `Replace Factory API URL with "${normalizedUrl}"`,
         pattern: Buffer.from(originalUrl),
         replacement: Buffer.from(paddedUrl),
+      });
+    }
+
+    // Add reasoning-effort patch: set custom models to use "high" reasoning
+    // Also modify UI conditions to show reasoning selector for custom models
+    if (reasoningEffort) {
+      // ["none"] is 8 chars, ["high"] is 8 chars - perfect match!
+      patches.push({
+        name: "reasoningEffortSupported",
+        description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
+        pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
+        replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
+      });
+      
+      // "none" is 4 chars, "high" is 4 chars - perfect match!
+      patches.push({
+        name: "reasoningEffortDefault",
+        description: 'Change defaultReasoningEffort:"none" to "high"',
+        pattern: Buffer.from('defaultReasoningEffort:"none"'),
+        replacement: Buffer.from('defaultReasoningEffort:"high"'),
+      });
+      
+      // Change UI condition from length>1 to length>0
+      // This allows custom models with single reasoning option to show the selector
+      patches.push({
+        name: "reasoningEffortUIShow",
+        description: "Change supportedReasoningEfforts.length>1 to length>0",
+        pattern: Buffer.from("supportedReasoningEfforts.length>1"),
+        replacement: Buffer.from("supportedReasoningEfforts.length>0"),
+      });
+      
+      // Change UI condition from length<=1 to length<=0
+      // This enables the reasoning setting in /settings menu for custom models
+      patches.push({
+        name: "reasoningEffortUIEnable",
+        description: "Change supportedReasoningEfforts.length<=1 to length<=0",
+        pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
+        replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
       });
     }
 
@@ -415,6 +471,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           skipLogin: !!skipLogin,
           apiBase: apiBase || null,
           websearch: !!webSearch,
+          reasoningEffort: !!reasoningEffort,
         });
         await saveAliasMetadata(metadata);
       }
@@ -743,6 +800,33 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: `Replace Factory API URL with "${meta.patches.apiBase}"`,
             pattern: Buffer.from(originalUrl),
             replacement: Buffer.from(paddedUrl),
+          });
+        }
+
+        if (meta.patches.reasoningEffort) {
+          patches.push({
+            name: "reasoningEffortSupported",
+            description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
+            pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
+            replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
+          });
+          patches.push({
+            name: "reasoningEffortDefault",
+            description: 'Change defaultReasoningEffort:"none" to "high"',
+            pattern: Buffer.from('defaultReasoningEffort:"none"'),
+            replacement: Buffer.from('defaultReasoningEffort:"high"'),
+          });
+          patches.push({
+            name: "reasoningEffortUIShow",
+            description: "Change supportedReasoningEfforts.length>1 to length>0",
+            pattern: Buffer.from("supportedReasoningEfforts.length>1"),
+            replacement: Buffer.from("supportedReasoningEfforts.length>0"),
+          });
+          patches.push({
+            name: "reasoningEffortUIEnable",
+            description: "Change supportedReasoningEfforts.length<=1 to length<=0",
+            pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
+            replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
           });
         }
 
