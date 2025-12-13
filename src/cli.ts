@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 import { patchDroid, type Patch } from "./patcher.ts";
 import {
   createAlias,
@@ -36,15 +37,40 @@ const version = getVersion();
 
 function findDefaultDroidPath(): string {
   const home = homedir();
+
+  // Try `which droid` first to find droid in PATH
+  try {
+    const result = execSync("which droid", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    if (result && existsSync(result)) {
+      return result;
+    }
+  } catch {
+    // which command failed, continue with fallback paths
+  }
+
+  // Common installation paths
   const paths = [
-    join(home, ".droid/bin/droid"),
+    // Default sh install location
+    join(home, ".droid", "bin", "droid"),
+    // Homebrew on Apple Silicon
+    "/opt/homebrew/bin/droid",
+    // Homebrew on Intel Mac / Linux
     "/usr/local/bin/droid",
+    // Linux system-wide
+    "/usr/bin/droid",
+    // Current directory
     "./droid",
   ];
+
   for (const p of paths) {
     if (existsSync(p)) return p;
   }
-  return join(home, ".droid/bin/droid");
+
+  // Return default path even if not found (will error later with helpful message)
+  return join(home, ".droid", "bin", "droid");
 }
 
 bin("droid-patch", "CLI tool to patch droid binary with various modifications")
