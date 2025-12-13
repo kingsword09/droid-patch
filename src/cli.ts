@@ -125,7 +125,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         skipLogin: false,
         apiBase: null,
         websearch: true,
-        reasoningEffort: null,
+        reasoningEffort: false,
       });
       await saveAliasMetadata(metadata);
 
@@ -180,7 +180,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         styleText("yellow", "No patch flags specified. Available patches:"),
       );
       console.log(
-        styleText("gray", "  --is-custom         Patch isCustom for custom models"),
+        styleText(
+          "gray",
+          "  --is-custom         Patch isCustom for custom models",
+        ),
       );
       console.log(
         styleText(
@@ -340,7 +343,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
         replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
       });
-      
+
       // "none" is 4 chars, "high" is 4 chars - perfect match!
       patches.push({
         name: "reasoningEffortDefault",
@@ -348,7 +351,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         pattern: Buffer.from('defaultReasoningEffort:"none"'),
         replacement: Buffer.from('defaultReasoningEffort:"high"'),
       });
-      
+
       // Change UI condition from length>1 to length>0
       // This allows custom models with single reasoning option to show the selector
       patches.push({
@@ -357,7 +360,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         pattern: Buffer.from("supportedReasoningEfforts.length>1"),
         replacement: Buffer.from("supportedReasoningEfforts.length>0"),
       });
-      
+
       // Change UI condition from length<=1 to length<=0
       // This enables the reasoning setting in /settings menu for custom models
       patches.push({
@@ -806,7 +809,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         if (meta.patches.reasoningEffort) {
           patches.push({
             name: "reasoningEffortSupported",
-            description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
+            description:
+              'Change supportedReasoningEfforts:["none"] to ["high"]',
             pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
             replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
           });
@@ -818,13 +822,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           });
           patches.push({
             name: "reasoningEffortUIShow",
-            description: "Change supportedReasoningEfforts.length>1 to length>0",
+            description:
+              "Change supportedReasoningEfforts.length>1 to length>0",
             pattern: Buffer.from("supportedReasoningEfforts.length>1"),
             replacement: Buffer.from("supportedReasoningEfforts.length>0"),
           });
           patches.push({
             name: "reasoningEffortUIEnable",
-            description: "Change supportedReasoningEfforts.length<=1 to length<=0",
+            description:
+              "Change supportedReasoningEfforts.length<=1 to length<=0",
             pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
             replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
           });
