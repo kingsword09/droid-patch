@@ -824,7 +824,13 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
  * Filter options for removing aliases
  * Uses the same names as CLI options for consistency
  */
-export type FilterFlag = "is-custom" | "skip-login" | "websearch" | "api-base" | "reasoning-effort";
+export type FilterFlag =
+  | "is-custom"
+  | "skip-login"
+  | "websearch"
+  | "api-base"
+  | "reasoning-effort"
+  | "disable-telemetry";
 
 export interface RemoveFilterOptions {
   /** Remove aliases created by this droid-patch version */
@@ -950,6 +956,9 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             break;
           case "api-base":
             if (!patches.apiBase) matches = false;
+            break;
+          case "disable-telemetry":
+            if (!patches.noTelemetry) matches = false;
             break;
         }
         if (!matches) break;
