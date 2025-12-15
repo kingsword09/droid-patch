@@ -908,3 +908,174 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
     styleText("green", "All terminals will now use the original version."),
   );
 }
+
+/**
+ * Clear all droid-patch aliases and related files
+ */
+export async function clearAllAliases(): Promise<void> {
+  console.log(styleText("cyan", "═".repeat(60)));
+  console.log(styleText(["cyan", "bold"], "  Clearing All Droid-Patch Data"));
+  console.log(styleText("cyan", "═".repeat(60)));
+  console.log();
+
+  // Collect all alias names
+  const aliasNames = new Set<string>();
+
+  // Check common PATH directories for symlinks
+  for (const pathDir of COMMON_PATH_DIRS) {
+    if (!existsSync(pathDir)) continue;
+
+    try {
+      const files = readdirSync(pathDir);
+      for (const file of files) {
+        const fullPath = join(pathDir, file);
+        try {
+          const stats = lstatSync(fullPath);
+          if (stats.isSymbolicLink()) {
+            const target = await readlink(fullPath);
+            if (
+              target.includes(".droid-patch/bins") ||
+              target.includes(".droid-patch/websearch") ||
+              target.includes(".droid-patch/proxy")
+            ) {
+              aliasNames.add(file);
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    } catch {
+      // Directory can't be read
+    }
+  }
+
+  // Check aliases directory
+  if (existsSync(ALIASES_DIR)) {
+    try {
+      const files = readdirSync(ALIASES_DIR);
+      for (const file of files) {
+        const fullPath = join(ALIASES_DIR, file);
+        try {
+          const stats = lstatSync(fullPath);
+          if (stats.isSymbolicLink()) {
+            aliasNames.add(file);
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    } catch {
+      // Directory can't be read
+    }
+  }
+
+  if (aliasNames.size === 0) {
+    console.log(styleText("yellow", "  No aliases found."));
+  } else {
+    console.log(
+      styleText("white", `  Found ${aliasNames.size} alias(es) to remove:`),
+    );
+    for (const name of aliasNames) {
+      console.log(styleText("gray", `    • ${name}`));
+    }
+    console.log();
+
+    // Remove each alias
+    for (const aliasName of aliasNames) {
+      await removeAlias(aliasName);
+      console.log();
+    }
+  }
+
+  // Clean up directories (including legacy files)
+  console.log(styleText("white", "  Cleaning up directories..."));
+  const dirsToClean = [
+    join(DROID_PATCH_DIR, "bins"),
+    join(DROID_PATCH_DIR, "aliases"),
+    join(DROID_PATCH_DIR, "proxy"),
+    join(DROID_PATCH_DIR, "websearch"),
+  ];
+
+  for (const dir of dirsToClean) {
+    if (existsSync(dir)) {
+      try {
+        const files = readdirSync(dir);
+        for (const file of files) {
+          const fullPath = join(dir, file);
+          try {
+            await unlink(fullPath);
+            console.log(styleText("green", `    Removed: ${fullPath}`));
+          } catch {
+            // Ignore
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  // Clean up legacy temp files from old versions
+  const legacyTempFiles = [
+    "/tmp/droid-search-proxy.pid",
+    "/tmp/droid-search-proxy.log",
+  ];
+
+  for (const tempFile of legacyTempFiles) {
+    if (existsSync(tempFile)) {
+      try {
+        await unlink(tempFile);
+        console.log(styleText("green", `    Removed legacy: ${tempFile}`));
+      } catch {
+        // Ignore
+      }
+    }
+  }
+
+  // Clean up temp port files (pattern: /tmp/droid-websearch-*.port)
+  try {
+    const tmpFiles = readdirSync("/tmp");
+    for (const file of tmpFiles) {
+      if (file.startsWith("droid-websearch-") && file.endsWith(".port")) {
+        const fullPath = join("/tmp", file);
+        try {
+          await unlink(fullPath);
+          console.log(styleText("green", `    Removed temp: ${fullPath}`));
+        } catch {
+          // Ignore
+        }
+      }
+      // Also clean old droid-search-proxy-*.port files
+      if (file.startsWith("droid-search-proxy-") && file.endsWith(".port")) {
+        const fullPath = join("/tmp", file);
+        try {
+          await unlink(fullPath);
+          console.log(
+            styleText("green", `    Removed legacy temp: ${fullPath}`),
+          );
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
+  // Clean up metadata file
+  const metadataFile = join(DROID_PATCH_DIR, "metadata.json");
+  if (existsSync(metadataFile)) {
+    try {
+      await unlink(metadataFile);
+      console.log(styleText("green", `    Removed: ${metadataFile}`));
+    } catch {
+      // Ignore
+    }
+  }
+
+  console.log();
+  console.log(
+    styleText("green", "[*] All droid-patch data cleared successfully"),
+  );
+}

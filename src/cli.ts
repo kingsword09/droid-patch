@@ -11,6 +11,7 @@ import {
   removeAlias,
   listAliases,
   createAliasForWrapper,
+  clearAllAliases,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
 import {
@@ -525,6 +526,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .command("version", "Print droid-patch version")
   .action(() => {
     console.log(`droid-patch v${version}`);
+  })
+  .command("clear", "Remove all droid-patch aliases and related files")
+  .action(async () => {
+    await clearAllAliases();
   })
   .command("update", "Update aliases with latest droid binary")
   .argument(
