@@ -830,7 +830,8 @@ export type FilterFlag =
   | "websearch"
   | "api-base"
   | "reasoning-effort"
-  | "disable-telemetry";
+  | "disable-telemetry"
+  | "standalone";
 
 export interface RemoveFilterOptions {
   /** Remove aliases created by this droid-patch version */
@@ -959,6 +960,9 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             break;
           case "disable-telemetry":
             if (!patches.noTelemetry) matches = false;
+            break;
+          case "standalone":
+            if (!patches.standalone) matches = false;
             break;
         }
         if (!matches) break;

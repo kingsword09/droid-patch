@@ -109,6 +109,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--websearch",
     "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
   )
+  .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
     "--reasoning-effort",
     "Enable reasoning effort for custom models (set to high, enable UI selector)",
@@ -129,6 +130,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
+    const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
@@ -144,7 +146,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
     // Handle --websearch only (no binary patching needed)
-    // When --websearch is used alone, create proxy wrapper without modifying binary
+    // When --websearch is used alone (with optional --standalone), create proxy wrapper without modifying binary
     if (websearch && !isCustom && !skipLogin && !reasoningEffort && !noTelemetry) {
       if (!alias) {
         console.log(styleText("red", "Error: Alias name required for --websearch"));
@@ -157,6 +159,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("cyan", "═".repeat(60)));
       console.log();
       console.log(styleText("white", `Forward target: ${websearchTarget}`));
+      if (standalone) {
+        console.log(styleText("white", `Standalone mode: enabled`));
+      }
       console.log();
 
       // Create websearch proxy files (proxy script + wrapper)
@@ -166,6 +171,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         path,
         alias,
         websearchTarget,
+        standalone,
       );
 
       // Create alias pointing to wrapper
@@ -183,6 +189,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           websearch: true,
           reasoningEffort: false,
           noTelemetry: false,
+          standalone: standalone,
         },
         {
           droidPatchVersion: version,
@@ -235,12 +242,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(
         styleText("gray", "  --disable-telemetry Disable telemetry and Sentry error reporting"),
       );
+      console.log(
+        styleText("gray", "  --standalone        Standalone mode: mock non-LLM Factory APIs"),
+      );
       console.log();
       console.log("Usage examples:");
       console.log(styleText("cyan", "  npx droid-patch --is-custom droid-custom"));
       console.log(styleText("cyan", "  npx droid-patch --skip-login droid-nologin"));
       console.log(styleText("cyan", "  npx droid-patch --is-custom --skip-login droid-patched"));
       console.log(styleText("cyan", "  npx droid-patch --websearch droid-search"));
+      console.log(styleText("cyan", "  npx droid-patch --websearch --standalone droid-local"));
       console.log(styleText("cyan", "  npx droid-patch --disable-telemetry droid-private"));
       console.log(
         styleText(
@@ -454,12 +465,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             result.outputPath,
             alias,
             websearchTarget,
+            standalone,
           );
           await createAliasForWrapper(wrapperScript, alias, verbose);
 
           console.log();
           console.log(styleText("cyan", "WebSearch enabled"));
           console.log(styleText("white", `  Forward target: ${websearchTarget}`));
+          if (standalone) {
+            console.log(styleText("white", `  Standalone mode: enabled`));
+          }
         } else {
           await createAlias(result.outputPath, alias, verbose);
         }
@@ -476,6 +491,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             websearch: !!websearch,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
+            standalone: !!standalone,
           },
           {
             droidPatchVersion: version,
@@ -509,7 +525,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
@@ -763,9 +779,18 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             meta.patches.apiBase || meta.patches.proxy || "https://api.factory.ai";
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const targetBinaryPath = patches.length > 0 ? outputPath : newBinaryPath;
-          await createWebSearchUnifiedFiles(proxyDir, targetBinaryPath, meta.name, forwardTarget);
+          await createWebSearchUnifiedFiles(
+            proxyDir,
+            targetBinaryPath,
+            meta.name,
+            forwardTarget,
+            meta.patches.standalone || false,
+          );
           if (verbose) {
             console.log(styleText("gray", `  Regenerated websearch wrapper`));
+            if (meta.patches.standalone) {
+              console.log(styleText("gray", `  Standalone mode: enabled`));
+            }
           }
           // Migrate old proxy field to new websearch field
           if (meta.patches.proxy && !meta.patches.websearch) {
