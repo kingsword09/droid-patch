@@ -40,6 +40,8 @@ export interface AliasMetadata {
     reasoningEffort: boolean;
     /** Whether telemetry/Sentry is disabled */
     noTelemetry?: boolean;
+    /** Standalone mode: mock non-LLM Factory APIs */
+    standalone?: boolean;
   };
 }
 
@@ -168,5 +170,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.proxy && !patches.websearch) applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   if (patches.noTelemetry) applied.push("noTelemetry");
+  if (patches.standalone) applied.push("standalone");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }
