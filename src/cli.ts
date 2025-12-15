@@ -113,6 +113,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--reasoning-effort",
     "Enable reasoning effort for custom models (set to high, enable UI selector)",
   )
+  .option(
+    "--disable-telemetry",
+    "Disable telemetry and Sentry error reporting (block data uploads)",
+  )
   .option("--dry-run", "Verify patches without actually modifying the binary")
   .option("-p, --path <path>", "Path to the droid binary")
   .option("-o, --output <dir>", "Output directory for patched binary")
@@ -129,6 +133,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Otherwise forward to official Factory API
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
+    const noTelemetry = options["disable-telemetry"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
     const outputDir = options.output as string | undefined;
@@ -140,7 +145,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     // Handle --websearch only (no binary patching needed)
     // When --websearch is used alone, create proxy wrapper without modifying binary
-    if (websearch && !isCustom && !skipLogin && !reasoningEffort) {
+    if (websearch && !isCustom && !skipLogin && !reasoningEffort && !noTelemetry) {
       if (!alias) {
         console.log(styleText("red", "Error: Alias name required for --websearch"));
         console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
@@ -177,6 +182,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           apiBase: apiBase || null,
           websearch: true,
           reasoningEffort: false,
+          noTelemetry: false,
         },
         {
           droidPatchVersion: version,
@@ -213,7 +219,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       return;
     }
 
-    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort) {
+    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort && !noTelemetry) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
       console.log(
@@ -226,12 +232,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(
         styleText("gray", "  --reasoning-effort  Set reasoning effort level for custom models"),
       );
+      console.log(
+        styleText("gray", "  --disable-telemetry Disable telemetry and Sentry error reporting"),
+      );
       console.log();
       console.log("Usage examples:");
       console.log(styleText("cyan", "  npx droid-patch --is-custom droid-custom"));
       console.log(styleText("cyan", "  npx droid-patch --skip-login droid-nologin"));
       console.log(styleText("cyan", "  npx droid-patch --is-custom --skip-login droid-patched"));
       console.log(styleText("cyan", "  npx droid-patch --websearch droid-search"));
+      console.log(styleText("cyan", "  npx droid-patch --disable-telemetry droid-private"));
       console.log(
         styleText(
           "cyan",
@@ -366,6 +376,41 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       });
     }
 
+    // Add no-telemetry patches: disable telemetry uploads and Sentry error reporting
+    // Strategy:
+    // 1. Break environment variable names so Sentry is never initialized (Q1() returns false)
+    // 2. Invert flushToWeb condition so it returns early without making any fetch request
+    if (noTelemetry) {
+      // Patch 1: Break Sentry environment variable checks
+      // Q1() function checks: VITE_VERCEL_ENV, ENABLE_SENTRY, NEXT_PUBLIC_ENABLE_SENTRY, FACTORY_ENABLE_SENTRY
+      // By changing first letter to X, the env vars will never match, so Q1() returns false
+      // and Sentry is never initialized
+      patches.push({
+        name: "noTelemetrySentryEnv1",
+        description: "Break ENABLE_SENTRY env var check (E->X)",
+        pattern: Buffer.from("ENABLE_SENTRY"),
+        replacement: Buffer.from("XNABLE_SENTRY"),
+      });
+
+      patches.push({
+        name: "noTelemetrySentryEnv2",
+        description: "Break VITE_VERCEL_ENV env var check (V->X)",
+        pattern: Buffer.from("VITE_VERCEL_ENV"),
+        replacement: Buffer.from("XITE_VERCEL_ENV"),
+      });
+
+      // Patch 2: Make flushToWeb always return early to prevent ANY fetch request
+      // Original: if(this.webEvents.length===0)return; // returns only when empty
+      // Changed:  if(!0||this.webEvents.length)return; // !0=true, ALWAYS returns
+      // Result: Function always exits immediately, no telemetry is ever sent
+      patches.push({
+        name: "noTelemetryFlushBlock",
+        description: "Make flushToWeb always return (!0|| = always true)",
+        pattern: Buffer.from("this.webEvents.length===0"),
+        replacement: Buffer.from("!0||this.webEvents.length"),
+      });
+    }
+
     try {
       const result = await patchDroid({
         inputPath: path,
@@ -430,6 +475,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             apiBase: apiBase || null,
             websearch: !!websearch,
             reasoningEffort: !!reasoningEffort,
+            noTelemetry: !!noTelemetry,
           },
           {
             droidPatchVersion: version,
@@ -463,7 +509,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
@@ -647,6 +693,27 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
             pattern: Buffer.from("if(R&&!B.supportedReasoningEfforts.includes(R))"),
             replacement: Buffer.from("if(0&&!B.supportedReasoningEfforts.includes(R))"),
+          });
+        }
+
+        if (meta.patches.noTelemetry) {
+          patches.push({
+            name: "noTelemetrySentryEnv1",
+            description: "Break ENABLE_SENTRY env var check (E->X)",
+            pattern: Buffer.from("ENABLE_SENTRY"),
+            replacement: Buffer.from("XNABLE_SENTRY"),
+          });
+          patches.push({
+            name: "noTelemetrySentryEnv2",
+            description: "Break VITE_VERCEL_ENV env var check (V->X)",
+            pattern: Buffer.from("VITE_VERCEL_ENV"),
+            replacement: Buffer.from("XITE_VERCEL_ENV"),
+          });
+          patches.push({
+            name: "noTelemetryFlushBlock",
+            description: "Make flushToWeb always return (!0|| = always true)",
+            pattern: Buffer.from("this.webEvents.length===0"),
+            replacement: Buffer.from("!0||this.webEvents.length"),
           });
         }
 

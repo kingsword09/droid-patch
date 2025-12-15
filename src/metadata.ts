@@ -38,6 +38,8 @@ export interface AliasMetadata {
     /** @deprecated Old proxy field, kept for backward compatibility */
     proxy?: string | null;
     reasoningEffort: boolean;
+    /** Whether telemetry/Sentry is disabled */
+    noTelemetry?: boolean;
   };
 }
 
@@ -165,5 +167,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   // Support old proxy field for backward compatibility
   if (patches.proxy && !patches.websearch) applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
+  if (patches.noTelemetry) applied.push("noTelemetry");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }
