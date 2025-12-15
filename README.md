@@ -54,18 +54,18 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### Available Options
 
-| Option | Description |
-|--------|-------------|
-| `--is-custom` | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models) |
-| `--skip-login` | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary |
-| `--api-base <url>` | Replace Factory API URL with a custom server (max 22 chars) |
-| `--websearch` | Inject local WebSearch proxy with multiple search providers |
-| `--reasoning-effort` | Enable reasoning effort UI selector for custom models (set to high) |
-| `--dry-run` | Verify patches without actually modifying the binary |
-| `-p, --path <path>` | Path to the droid binary (default: `~/.droid/bin/droid`) |
-| `-o, --output <dir>` | Output directory for patched binary (creates file without alias) |
-| `--no-backup` | Skip creating backup of original binary |
-| `-v, --verbose` | Enable verbose output |
+| Option               | Description                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `--is-custom`        | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models) |
+| `--skip-login`       | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                   |
+| `--api-base <url>`   | Replace Factory API URL with a custom server (max 22 chars)                          |
+| `--websearch`        | Inject local WebSearch proxy with multiple search providers                          |
+| `--reasoning-effort` | Enable reasoning effort UI selector for custom models (set to high)                  |
+| `--dry-run`          | Verify patches without actually modifying the binary                                 |
+| `-p, --path <path>`  | Path to the droid binary (default: `~/.droid/bin/droid`)                             |
+| `-o, --output <dir>` | Output directory for patched binary (creates file without alias)                     |
+| `--no-backup`        | Skip creating backup of original binary                                              |
+| `-v, --verbose`      | Enable verbose output                                                                |
 
 ### Manage Aliases and Files
 
@@ -147,6 +147,7 @@ Replaces all `process.env.FACTORY_API_KEY` references in the binary with a hardc
 **Purpose**: Bypass the login/authentication requirement without needing to set the `FACTORY_API_KEY` environment variable.
 
 **How it works**:
+
 - The original code checks `process.env.FACTORY_API_KEY` to authenticate
 - After patching, the code directly uses the fake key string, bypassing the env check
 - This is a binary-level patch, so it works across all terminal sessions without any environment setup
@@ -160,6 +161,7 @@ Replaces the Factory API base URL (`https://api.factory.ai`) with a custom URL.
 **Limitation**: URL must be 22 characters or less (same length as original URL).
 
 **Examples**:
+
 ```bash
 # Valid URLs (<=22 chars)
 npx droid-patch --api-base "http://127.0.0.1:3000" droid-local
@@ -176,12 +178,14 @@ Enables WebSearch functionality through a local proxy server that intercepts `/a
 **Purpose**: Enable WebSearch functionality without Factory.ai authentication.
 
 **Features**:
+
 - **Multiple search providers** with automatic fallback
 - **Auto-start**: Proxy starts automatically when you run the alias
 - **Auto-shutdown**: Proxy shuts down after 5 minutes of inactivity (configurable)
 - **Process detection**: Stays alive as long as droid is running
 
 **Usage**:
+
 ```bash
 # Create alias with websearch
 npx droid-patch --websearch droid-search
@@ -193,6 +197,7 @@ droid-search
 ### `--reasoning-effort`
 
 Enables reasoning effort control for custom models by patching the binary to:
+
 1. Set `supportedReasoningEfforts` from `["none"]` to `["high"]`
 2. Set `defaultReasoningEffort` from `"none"` to `"high"`
 3. Enable the reasoning effort UI selector (normally hidden for custom models)
@@ -201,12 +206,14 @@ Enables reasoning effort control for custom models by patching the binary to:
 **Purpose**: Allow custom models to use reasoning effort features that are normally only available for official models.
 
 **How it works**:
+
 - The droid UI shows a reasoning effort selector when `supportedReasoningEfforts.length > 1`
 - Custom models are hardcoded with `["none"]`, hiding the selector
 - This patch changes the value to `["high"]` and modifies the UI condition to show the selector
 - The reasoning effort setting will be sent to your custom model's API
 
 **Usage**:
+
 ```bash
 # Enable reasoning effort for custom models
 npx droid-patch --reasoning-effort droid-reasoning
@@ -248,14 +255,14 @@ The `--websearch` feature supports multiple search providers. Configure them usi
 
 The proxy tries providers in this order and uses the first one that succeeds:
 
-| Priority | Provider | Quality | Free Tier | Setup Difficulty |
-|----------|----------|---------|-----------|------------------|
-| 1 | Smithery Exa | Excellent | Free (via Smithery) | Easy |
-| 2 | Google PSE | Very Good | 10,000/day | Medium |
-| 3 | Serper | Very Good | 2,500 free credits | Easy |
-| 4 | Brave Search | Good | 2,000/month | Easy |
-| 5 | SearXNG | Good | Unlimited (self-host) | Hard |
-| 6 | DuckDuckGo | Basic | Unlimited | None |
+| Priority | Provider     | Quality   | Free Tier             | Setup Difficulty |
+| -------- | ------------ | --------- | --------------------- | ---------------- |
+| 1        | Smithery Exa | Excellent | Free (via Smithery)   | Easy             |
+| 2        | Google PSE   | Very Good | 10,000/day            | Medium           |
+| 3        | Serper       | Very Good | 2,500 free credits    | Easy             |
+| 4        | Brave Search | Good      | 2,000/month           | Easy             |
+| 5        | SearXNG      | Good      | Unlimited (self-host) | Hard             |
+| 6        | DuckDuckGo   | Basic     | Unlimited             | None             |
 
 ---
 
@@ -417,6 +424,7 @@ Find public instances at [searx.space](https://searx.space/)
 #### Option B: Self-Host with Docker
 
 1. **Run SearXNG with Docker**
+
    ```bash
    docker run -d \
      --name searxng \
@@ -523,6 +531,7 @@ npx droid-patch proxy-status
 ```
 
 Output shows:
+
 - Proxy running status
 - Process ID
 - Droid process detection

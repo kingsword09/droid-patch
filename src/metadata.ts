@@ -73,9 +73,7 @@ export async function saveAliasMetadata(meta: AliasMetadata): Promise<void> {
  * Load alias metadata from disk
  * Returns null if metadata doesn't exist
  */
-export async function loadAliasMetadata(
-  aliasName: string,
-): Promise<AliasMetadata | null> {
+export async function loadAliasMetadata(aliasName: string): Promise<AliasMetadata | null> {
   const metaPath = getMetaPath(aliasName);
   if (!existsSync(metaPath)) {
     return null;
@@ -158,16 +156,14 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.isCustom) applied.push("isCustom");
   if (patches.skipLogin) applied.push("skipLogin");
   // Show apiBase only when not using websearch (binary patch mode)
-  if (patches.apiBase && !patches.websearch)
-    applied.push(`apiBase(${patches.apiBase})`);
+  if (patches.apiBase && !patches.websearch) applied.push(`apiBase(${patches.apiBase})`);
   // Show websearch with optional custom target
   if (patches.websearch) {
     const target = patches.apiBase || "api.factory.ai";
     applied.push(`websearch(${target})`);
   }
   // Support old proxy field for backward compatibility
-  if (patches.proxy && !patches.websearch)
-    applied.push(`websearch(${patches.proxy})`);
+  if (patches.proxy && !patches.websearch) applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }

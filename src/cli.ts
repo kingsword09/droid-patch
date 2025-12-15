@@ -105,10 +105,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--api-base <url>",
     "Replace Factory API base URL (https://api.factory.ai) with custom URL (binary patch)",
   )
-  .option(
-    "--websearch",
-    "Enable local WebSearch proxy (intercepts search requests)",
-  )
+  .option("--websearch", "Enable local WebSearch proxy (intercepts search requests)")
   .option(
     "--reasoning-effort",
     "Enable reasoning effort for custom models (set to high, enable UI selector)",
@@ -127,9 +124,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const websearch = options["websearch"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
-    const websearchTarget = websearch
-      ? apiBase || "https://api.factory.ai"
-      : undefined;
+    const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
@@ -144,12 +139,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // When --websearch is used alone, create proxy wrapper without modifying binary
     if (websearch && !isCustom && !skipLogin && !reasoningEffort) {
       if (!alias) {
-        console.log(
-          styleText("red", "Error: Alias name required for --websearch"),
-        );
-        console.log(
-          styleText("gray", "Usage: npx droid-patch --websearch <alias>"),
-        );
+        console.log(styleText("red", "Error: Alias name required for --websearch"));
+        console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
         process.exit(1);
       }
 
@@ -201,36 +192,18 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log();
       console.log(styleText("cyan", "Auto-shutdown:"));
       console.log(
-        styleText(
-          "gray",
-          "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)",
-        ),
+        styleText("gray", "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)"),
       );
-      console.log(
-        styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"),
-      );
+      console.log(styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"));
       console.log();
       console.log("Search providers (in priority order):");
       console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
-      console.log(
-        styleText("gray", "     export SMITHERY_API_KEY=your_api_key"),
-      );
-      console.log(
-        styleText("gray", "     export SMITHERY_PROFILE=your_profile"),
-      );
+      console.log(styleText("gray", "     export SMITHERY_API_KEY=your_api_key"));
+      console.log(styleText("gray", "     export SMITHERY_PROFILE=your_profile"));
       console.log(styleText("gray", "  2. Google PSE:"));
-      console.log(
-        styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"),
-      );
-      console.log(
-        styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"),
-      );
-      console.log(
-        styleText(
-          "gray",
-          "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)",
-        ),
-      );
+      console.log(styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"));
+      console.log(styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"));
+      console.log(styleText("gray", "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
       console.log();
       console.log("Debug mode:");
       console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1"));
@@ -238,53 +211,24 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     }
 
     if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort) {
+      console.log(styleText("yellow", "No patch flags specified. Available patches:"));
+      console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
       console.log(
-        styleText("yellow", "No patch flags specified. Available patches:"),
+        styleText("gray", "  --skip-login        Bypass login by injecting a fake API key"),
       );
       console.log(
-        styleText(
-          "gray",
-          "  --is-custom         Patch isCustom for custom models",
-        ),
+        styleText("gray", "  --api-base          Replace Factory API URL (binary patch)"),
       );
+      console.log(styleText("gray", "  --websearch         Enable local WebSearch proxy"));
       console.log(
-        styleText(
-          "gray",
-          "  --skip-login        Bypass login by injecting a fake API key",
-        ),
-      );
-      console.log(
-        styleText(
-          "gray",
-          "  --api-base          Replace Factory API URL (binary patch)",
-        ),
-      );
-      console.log(
-        styleText("gray", "  --websearch         Enable local WebSearch proxy"),
-      );
-      console.log(
-        styleText(
-          "gray",
-          "  --reasoning-effort  Set reasoning effort level for custom models",
-        ),
+        styleText("gray", "  --reasoning-effort  Set reasoning effort level for custom models"),
       );
       console.log();
       console.log("Usage examples:");
-      console.log(
-        styleText("cyan", "  npx droid-patch --is-custom droid-custom"),
-      );
-      console.log(
-        styleText("cyan", "  npx droid-patch --skip-login droid-nologin"),
-      );
-      console.log(
-        styleText(
-          "cyan",
-          "  npx droid-patch --is-custom --skip-login droid-patched",
-        ),
-      );
-      console.log(
-        styleText("cyan", "  npx droid-patch --websearch droid-search"),
-      );
+      console.log(styleText("cyan", "  npx droid-patch --is-custom droid-custom"));
+      console.log(styleText("cyan", "  npx droid-patch --skip-login droid-nologin"));
+      console.log(styleText("cyan", "  npx droid-patch --is-custom --skip-login droid-patched"));
+      console.log(styleText("cyan", "  npx droid-patch --websearch droid-search"));
       console.log(
         styleText(
           "cyan",
@@ -325,8 +269,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     if (skipLogin) {
       patches.push({
         name: "skipLogin",
-        description:
-          'Replace process.env.FACTORY_API_KEY with "fk-droid-patch-skip-00000"',
+        description: 'Replace process.env.FACTORY_API_KEY with "fk-droid-patch-skip-00000"',
         pattern: Buffer.from("process.env.FACTORY_API_KEY"),
         replacement: Buffer.from('"fk-droid-patch-skip-00000"'),
       });
@@ -345,27 +288,14 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       if (normalizedUrl.length > originalLength) {
         console.log(
-          styleText(
-            "red",
-            `Error: API base URL must be ${originalLength} characters or less`,
-          ),
+          styleText("red", `Error: API base URL must be ${originalLength} characters or less`),
         );
         console.log(
-          styleText(
-            "gray",
-            `  Your URL: "${normalizedUrl}" (${normalizedUrl.length} chars)`,
-          ),
+          styleText("gray", `  Your URL: "${normalizedUrl}" (${normalizedUrl.length} chars)`),
         );
-        console.log(
-          styleText("gray", `  Maximum:  ${originalLength} characters`),
-        );
+        console.log(styleText("gray", `  Maximum:  ${originalLength} characters`));
         console.log();
-        console.log(
-          styleText(
-            "yellow",
-            "Tip: Use a shorter URL or set up a local redirect.",
-          ),
-        );
+        console.log(styleText("yellow", "Tip: Use a shorter URL or set up a local redirect."));
         console.log(styleText("gray", "  Examples:"));
         console.log(styleText("gray", "    http://127.0.0.1:3000 (19 chars)"));
         console.log(styleText("gray", "    http://localhost:80  (19 chars)"));
@@ -427,12 +357,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       // Changed:  if(0&&...) - never throws, any value is accepted
       patches.push({
         name: "reasoningEffortValidationBypass",
-        description:
-          "Bypass reasoning effort validation (allows xhigh in settings.json)",
+        description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
         pattern: Buffer.from("if(R&&!B.supportedReasoningEfforts.includes(R))"),
-        replacement: Buffer.from(
-          "if(0&&!B.supportedReasoningEfforts.includes(R))",
-        ),
+        replacement: Buffer.from("if(0&&!B.supportedReasoningEfforts.includes(R))"),
       });
     }
 
@@ -452,15 +379,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log(styleText(["blue", "bold"], "  DRY RUN COMPLETE"));
         console.log(styleText("blue", "═".repeat(60)));
         console.log();
-        console.log(
-          styleText("gray", "To apply the patches, run without --dry-run:"),
-        );
-        console.log(
-          styleText(
-            "cyan",
-            `  npx droid-patch --is-custom ${alias || "<alias-name>"}`,
-          ),
-        );
+        console.log(styleText("gray", "To apply the patches, run without --dry-run:"));
+        console.log(styleText("cyan", `  npx droid-patch --is-custom ${alias || "<alias-name>"}`));
         process.exit(0);
       }
 
@@ -471,9 +391,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log(styleText(["green", "bold"], "  PATCH SUCCESSFUL"));
         console.log(styleText("green", "═".repeat(60)));
         console.log();
-        console.log(
-          styleText("white", `Patched binary saved to: ${result.outputPath}`),
-        );
+        console.log(styleText("white", `Patched binary saved to: ${result.outputPath}`));
         process.exit(0);
       }
 
@@ -493,9 +411,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
           console.log();
           console.log(styleText("cyan", "WebSearch enabled"));
-          console.log(
-            styleText("white", `  Forward target: ${websearchTarget}`),
-          );
+          console.log(styleText("white", `  Forward target: ${websearchTarget}`));
         } else {
           await createAlias(result.outputPath, alias, verbose);
         }
@@ -540,10 +456,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   })
   .command("remove", "Remove alias(es) by name or filter")
   .argument("[alias-or-path]", "Alias name or file path to remove")
-  .option(
-    "--patch-version <version>",
-    "Remove aliases created by this droid-patch version",
-  )
+  .option("--patch-version <version>", "Remove aliases created by this droid-patch version")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
@@ -601,10 +514,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     await clearAllAliases();
   })
   .command("update", "Update aliases with latest droid binary")
-  .argument(
-    "[alias]",
-    "Specific alias to update (optional, updates all if not specified)",
-  )
+  .argument("[alias]", "Specific alias to update (optional, updates all if not specified)")
   .option("--dry-run", "Preview without making changes")
   .option("-p, --path <path>", "Path to new droid binary")
   .option("-v, --verbose", "Enable verbose output")
@@ -621,9 +531,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     // Verify the new binary exists
     if (!existsSync(newBinaryPath)) {
-      console.log(
-        styleText("red", `Error: Droid binary not found at ${newBinaryPath}`),
-      );
+      console.log(styleText("red", `Error: Droid binary not found at ${newBinaryPath}`));
       console.log(styleText("gray", "Use -p to specify a different path"));
       process.exit(1);
     }
@@ -633,21 +541,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     if (aliasName) {
       const meta = await loadAliasMetadata(aliasName);
       if (!meta) {
+        console.log(styleText("red", `Error: No metadata found for alias "${aliasName}"`));
         console.log(
-          styleText("red", `Error: No metadata found for alias "${aliasName}"`),
+          styleText("gray", "This alias may have been created before update tracking was added."),
         );
-        console.log(
-          styleText(
-            "gray",
-            "This alias may have been created before update tracking was added.",
-          ),
-        );
-        console.log(
-          styleText(
-            "gray",
-            "Remove and recreate the alias to enable update support.",
-          ),
-        );
+        console.log(styleText("gray", "Remove and recreate the alias to enable update support."));
         process.exit(1);
       }
       metaList = [meta];
@@ -655,20 +553,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       metaList = await listAllMetadata();
       if (metaList.length === 0) {
         console.log(styleText("yellow", "No aliases with metadata found."));
-        console.log(
-          styleText(
-            "gray",
-            "Create aliases with droid-patch to enable update support.",
-          ),
-        );
+        console.log(styleText("gray", "Create aliases with droid-patch to enable update support."));
         process.exit(0);
       }
     }
 
     console.log(styleText("white", `Using droid binary: ${newBinaryPath}`));
-    console.log(
-      styleText("white", `Found ${metaList.length} alias(es) to update`),
-    );
+    console.log(styleText("white", `Found ${metaList.length} alias(es) to update`));
     if (dryRun) {
       console.log(styleText("blue", "(DRY RUN - no changes will be made)"));
     }
@@ -681,15 +572,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       if (!meta) continue;
 
       console.log(styleText("cyan", `─`.repeat(40)));
-      console.log(
-        styleText(
-          "white",
-          `Updating: ${styleText(["cyan", "bold"], meta.name)}`,
-        ),
-      );
-      console.log(
-        styleText("gray", `  Patches: ${formatPatches(meta.patches)}`),
-      );
+      console.log(styleText("white", `Updating: ${styleText(["cyan", "bold"], meta.name)}`));
+      console.log(styleText("gray", `  Patches: ${formatPatches(meta.patches)}`));
 
       if (dryRun) {
         console.log(styleText("blue", `  [DRY RUN] Would re-apply patches`));
@@ -721,10 +605,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (meta.patches.apiBase) {
           const originalUrl = "https://api.factory.ai";
-          const paddedUrl = meta.patches.apiBase.padEnd(
-            originalUrl.length,
-            " ",
-          );
+          const paddedUrl = meta.patches.apiBase.padEnd(originalUrl.length, " ");
           patches.push({
             name: "apiBase",
             description: `Replace Factory API URL with "${meta.patches.apiBase}"`,
@@ -736,8 +617,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         if (meta.patches.reasoningEffort) {
           patches.push({
             name: "reasoningEffortSupported",
-            description:
-              'Change supportedReasoningEfforts:["none"] to ["high"]',
+            description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
             pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
             replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
           });
@@ -749,28 +629,21 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           });
           patches.push({
             name: "reasoningEffortUIShow",
-            description:
-              "Change supportedReasoningEfforts.length>1 to length>0",
+            description: "Change supportedReasoningEfforts.length>1 to length>0",
             pattern: Buffer.from("supportedReasoningEfforts.length>1"),
             replacement: Buffer.from("supportedReasoningEfforts.length>0"),
           });
           patches.push({
             name: "reasoningEffortUIEnable",
-            description:
-              "Change supportedReasoningEfforts.length<=1 to length<=0",
+            description: "Change supportedReasoningEfforts.length<=1 to length<=0",
             pattern: Buffer.from("supportedReasoningEfforts.length<=1"),
             replacement: Buffer.from("supportedReasoningEfforts.length<=0"),
           });
           patches.push({
             name: "reasoningEffortValidationBypass",
-            description:
-              "Bypass reasoning effort validation (allows xhigh in settings.json)",
-            pattern: Buffer.from(
-              "if(R&&!B.supportedReasoningEfforts.includes(R))",
-            ),
-            replacement: Buffer.from(
-              "if(0&&!B.supportedReasoningEfforts.includes(R))",
-            ),
+            description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
+            pattern: Buffer.from("if(R&&!B.supportedReasoningEfforts.includes(R))"),
+            replacement: Buffer.from("if(0&&!B.supportedReasoningEfforts.includes(R))"),
           });
         }
 
@@ -806,9 +679,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
                 console.log(styleText("gray", `  Re-signed binary`));
               }
             } catch {
-              console.log(
-                styleText("yellow", `  [!] Could not re-sign binary`),
-              );
+              console.log(styleText("yellow", `  [!] Could not re-sign binary`));
             }
           }
         }
@@ -819,18 +690,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         if (hasWebsearch) {
           // Determine forward target: apiBase > proxy (legacy) > default
           const forwardTarget =
-            meta.patches.apiBase ||
-            meta.patches.proxy ||
-            "https://api.factory.ai";
+            meta.patches.apiBase || meta.patches.proxy || "https://api.factory.ai";
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
-          const targetBinaryPath =
-            patches.length > 0 ? outputPath : newBinaryPath;
-          await createWebSearchUnifiedFiles(
-            proxyDir,
-            targetBinaryPath,
-            meta.name,
-            forwardTarget,
-          );
+          const targetBinaryPath = patches.length > 0 ? outputPath : newBinaryPath;
+          await createWebSearchUnifiedFiles(proxyDir, targetBinaryPath, meta.name, forwardTarget);
           if (verbose) {
             console.log(styleText("gray", `  Regenerated websearch wrapper`));
           }
@@ -862,19 +725,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     console.log(styleText("cyan", "═".repeat(60)));
     if (dryRun) {
       console.log(styleText(["blue", "bold"], "  DRY RUN COMPLETE"));
-      console.log(
-        styleText("gray", `  Would update ${successCount} alias(es)`),
-      );
+      console.log(styleText("gray", `  Would update ${successCount} alias(es)`));
     } else if (failCount === 0) {
       console.log(styleText(["green", "bold"], "  UPDATE COMPLETE"));
       console.log(styleText("gray", `  Updated ${successCount} alias(es)`));
     } else {
-      console.log(
-        styleText(["yellow", "bold"], "  UPDATE FINISHED WITH ERRORS"),
-      );
-      console.log(
-        styleText("gray", `  Success: ${successCount}, Failed: ${failCount}`),
-      );
+      console.log(styleText(["yellow", "bold"], "  UPDATE FINISHED WITH ERRORS"));
+      console.log(styleText("gray", `  Success: ${successCount}, Failed: ${failCount}`));
     }
     console.log(styleText("cyan", "═".repeat(60)));
   })
