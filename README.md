@@ -70,7 +70,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 ### Manage Aliases and Files
 
 ```bash
-# List all aliases
+# List all aliases (shows versions, flags, creation time)
 npx droid-patch list
 
 # Remove an alias
@@ -80,8 +80,13 @@ npx droid-patch remove <alias-name>
 npx droid-patch remove ./my-droid
 npx droid-patch remove /path/to/patched-binary
 
-# Check proxy status
-npx droid-patch proxy-status
+# Remove aliases by filter
+npx droid-patch remove --patch-version=0.4.0     # by droid-patch version
+npx droid-patch remove --droid-version=1.0.40    # by droid version
+npx droid-patch remove --flag=websearch          # by feature flag
+
+# Clear all droid-patch data (aliases, binaries, metadata)
+npx droid-patch clear
 ```
 
 ### Update Aliases
@@ -180,15 +185,18 @@ Enables WebSearch functionality through a local proxy server that intercepts `/a
 **Features**:
 
 - **Multiple search providers** with automatic fallback
-- **Auto-start**: Proxy starts automatically when you run the alias
-- **Auto-shutdown**: Proxy shuts down after 5 minutes of inactivity (configurable)
-- **Process detection**: Stays alive as long as droid is running
+- **Per-instance proxy**: Each droid instance runs its own proxy on an auto-assigned port
+- **Auto-cleanup**: Proxy automatically stops when droid exits
+- **Forward target**: Use `--api-base` with `--websearch` to forward non-search requests to a custom backend
 
 **Usage**:
 
 ```bash
-# Create alias with websearch
+# Create alias with websearch (uses official Factory API)
 npx droid-patch --websearch droid-search
+
+# Create alias with websearch + custom backend
+npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # Just run it - everything is automatic!
 droid-search
@@ -512,32 +520,7 @@ export BRAVE_API_KEY="your_brave_key"
 
 ---
 
-## Proxy Management
-
-### Auto-Shutdown
-
-The proxy automatically shuts down after 5 minutes of inactivity to save resources.
-
-```bash
-# Customize timeout (in seconds)
-export DROID_PROXY_IDLE_TIMEOUT=600   # 10 minutes
-export DROID_PROXY_IDLE_TIMEOUT=0     # Disable auto-shutdown
-```
-
-### Check Proxy Status
-
-```bash
-npx droid-patch proxy-status
-```
-
-Output shows:
-
-- Proxy running status
-- Process ID
-- Droid process detection
-- Idle timeout settings
-
-### Debug Mode
+## Debug Mode
 
 Enable detailed logging to troubleshoot search issues:
 
@@ -556,15 +539,23 @@ npx droid-patch --websearch droid-search
 droid-search  # Just works!
 
 # Full-featured droid
-npx droid-patch --is-custom --skip-login --websearch droid-full
+npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
+
+# Websearch with custom backend
+npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # Create a standalone patched binary in current directory
 npx droid-patch --skip-login -o . my-droid
 ./my-droid --version
 
+# List all aliases with version info
+npx droid-patch list
+
 # Clean up
-npx droid-patch remove droid-search   # remove alias and all related files
-npx droid-patch remove ./my-droid     # remove file
+npx droid-patch remove droid-search              # remove single alias
+npx droid-patch remove --flag=websearch          # remove all websearch aliases
+npx droid-patch remove --patch-version=0.4.0     # remove by droid-patch version
+npx droid-patch clear                            # remove everything
 ```
 
 ## License
