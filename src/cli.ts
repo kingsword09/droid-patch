@@ -103,9 +103,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   )
   .option(
     "--api-base <url>",
-    "Replace Factory API base URL (https://api.factory.ai) with custom URL (binary patch)",
+    "Replace Factory API URL with custom URL (binary patch, or forward target with --websearch)",
   )
-  .option("--websearch", "Enable local WebSearch proxy (intercepts search requests)")
+  .option(
+    "--websearch",
+    "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
+  )
   .option(
     "--reasoning-effort",
     "Enable reasoning effort for custom models (set to high, enable UI selector)",

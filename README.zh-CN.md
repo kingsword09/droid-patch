@@ -70,7 +70,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 ### 管理别名和文件
 
 ```bash
-# 列出所有别名
+# 列出所有别名（显示版本、flags、创建时间）
 npx droid-patch list
 
 # 删除别名
@@ -80,8 +80,13 @@ npx droid-patch remove <alias-name>
 npx droid-patch remove ./my-droid
 npx droid-patch remove /path/to/patched-binary
 
-# 检查代理状态
-npx droid-patch proxy-status
+# 按条件删除别名
+npx droid-patch remove --patch-version=0.4.0     # 按 droid-patch 版本
+npx droid-patch remove --droid-version=1.0.40    # 按 droid 版本
+npx droid-patch remove --flag=websearch          # 按功能 flag
+
+# 清除所有 droid-patch 数据（别名、二进制文件、元数据）
+npx droid-patch clear
 ```
 
 ### 更新别名
@@ -180,15 +185,18 @@ npx droid-patch --api-base "http://my-long-domain.com:3000" droid  # 错误！
 **特性**：
 
 - **多搜索提供商**：支持自动降级
-- **自动启动**：运行别名时代理自动启动
-- **自动关闭**：空闲 5 分钟后代理自动关闭（可配置）
-- **进程检测**：只要 droid 在运行，代理就保持活跃
+- **每实例独立代理**：每个 droid 实例运行自己的代理，自动分配端口
+- **自动清理**：droid 退出时代理自动停止
+- **转发目标**：使用 `--api-base` 配合 `--websearch` 可将非搜索请求转发到自定义后端
 
 **使用方法**：
 
 ```bash
-# 创建带 websearch 的别名
+# 创建带 websearch 的别名（使用官方 Factory API）
 npx droid-patch --websearch droid-search
+
+# 创建带 websearch + 自定义后端的别名
+npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # 直接运行 - 一切都是自动的！
 droid-search
@@ -512,32 +520,7 @@ export BRAVE_API_KEY="your_brave_key"
 
 ---
 
-## 代理管理
-
-### 自动关闭
-
-代理在空闲 5 分钟后自动关闭以节省资源。
-
-```bash
-# 自定义超时时间（秒）
-export DROID_PROXY_IDLE_TIMEOUT=600   # 10 分钟
-export DROID_PROXY_IDLE_TIMEOUT=0     # 禁用自动关闭
-```
-
-### 检查代理状态
-
-```bash
-npx droid-patch proxy-status
-```
-
-输出显示：
-
-- 代理运行状态
-- 进程 ID
-- Droid 进程检测
-- 空闲超时设置
-
-### 调试模式
+## 调试模式
 
 启用详细日志以排查搜索问题：
 
@@ -556,15 +539,23 @@ npx droid-patch --websearch droid-search
 droid-search  # 直接使用！
 
 # 全功能 droid
-npx droid-patch --is-custom --skip-login --websearch droid-full
+npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
+
+# websearch + 自定义后端
+npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # 在当前目录创建独立的修补后二进制文件
 npx droid-patch --skip-login -o . my-droid
 ./my-droid --version
 
+# 列出所有别名及版本信息
+npx droid-patch list
+
 # 清理
-npx droid-patch remove droid-search   # 删除别名和所有相关文件
-npx droid-patch remove ./my-droid     # 删除文件
+npx droid-patch remove droid-search              # 删除单个别名
+npx droid-patch remove --flag=websearch          # 删除所有 websearch 别名
+npx droid-patch remove --patch-version=0.4.0     # 按 droid-patch 版本删除
+npx droid-patch clear                            # 删除所有
 ```
 
 ## 许可证
