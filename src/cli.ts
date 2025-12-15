@@ -12,6 +12,8 @@ import {
   listAliases,
   createAliasForWrapper,
   clearAllAliases,
+  removeAliasesByFilter,
+  type FilterFlag,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
 import {
@@ -536,10 +538,44 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .action(async () => {
     await listAliases();
   })
-  .command("remove", "Remove a droid-patch alias or patched binary file")
-  .argument("<alias-or-path>", "Alias name or file path to remove")
-  .action(async (_options, args) => {
-    const target = args[0] as string;
+  .command("remove", "Remove alias(es) by name or filter")
+  .argument("[alias-or-path]", "Alias name or file path to remove")
+  .option(
+    "--patch-version <version>",
+    "Remove aliases created by this droid-patch version",
+  )
+  .option("--droid-version <version>", "Remove aliases for this droid version")
+  .option(
+    "--flag <flag>",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort)",
+  )
+  .action(async (options, args) => {
+    const target = args?.[0] as string | undefined;
+    const patchVersion = options["patch-version"] as string | undefined;
+    const droidVersion = options["droid-version"] as string | undefined;
+    const flag = options.flag as FilterFlag | undefined;
+
+    // If filter options are provided, use filter mode
+    if (patchVersion || droidVersion || flag) {
+      await removeAliasesByFilter({
+        patchVersion,
+        droidVersion,
+        flags: flag ? [flag] : undefined,
+      });
+      return;
+    }
+
+    // If no target and no filter, show error
+    if (!target) {
+      console.error(
+        styleText(
+          "red",
+          "Error: Provide an alias name or use filter options (--patch-version, --droid-version, --flag)",
+        ),
+      );
+      process.exit(1);
+    }
+
     // Check if it's a file path (contains / or .)
     if (target.includes("/") || existsSync(target)) {
       // It's a file path, delete directly
