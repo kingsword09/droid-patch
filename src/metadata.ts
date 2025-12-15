@@ -23,6 +23,10 @@ export interface AliasMetadata {
   updatedAt: string;
   /** Path to the original droid binary used for patching */
   originalBinaryPath: string;
+  /** droid-patch version used to create this alias */
+  droidPatchVersion?: string;
+  /** droid binary version */
+  droidVersion?: string;
   /** Patches that were applied */
   patches: {
     isCustom: boolean;
@@ -129,6 +133,10 @@ export function createMetadata(
   name: string,
   originalBinaryPath: string,
   patches: AliasMetadata["patches"],
+  versions?: {
+    droidPatchVersion?: string;
+    droidVersion?: string;
+  },
 ): AliasMetadata {
   const now = new Date().toISOString();
   return {
@@ -136,6 +144,8 @@ export function createMetadata(
     createdAt: now,
     updatedAt: now,
     originalBinaryPath,
+    droidPatchVersion: versions?.droidPatchVersion,
+    droidVersion: versions?.droidVersion,
     patches,
   };
 }

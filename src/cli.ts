@@ -36,6 +36,21 @@ function getVersion(): string {
 
 const version = getVersion();
 
+function getDroidVersion(droidPath: string): string | undefined {
+  try {
+    const result = execSync(`"${droidPath}" --version`, {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 5000,
+    }).trim();
+    // Parse version from output like "droid 1.2.3" or just "1.2.3"
+    const match = result.match(/(\d+\.\d+\.\d+)/);
+    return match ? match[1] : result || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function findDefaultDroidPath(): string {
   const home = homedir();
 
@@ -156,13 +171,22 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       await createAliasForWrapper(wrapperScript, alias, verbose);
 
       // Save metadata for update command
-      const metadata = createMetadata(alias, path, {
-        isCustom: false,
-        skipLogin: false,
-        apiBase: apiBase || null,
-        websearch: true,
-        reasoningEffort: false,
-      });
+      const droidVersion = getDroidVersion(path);
+      const metadata = createMetadata(
+        alias,
+        path,
+        {
+          isCustom: false,
+          skipLogin: false,
+          apiBase: apiBase || null,
+          websearch: true,
+          reasoningEffort: false,
+        },
+        {
+          droidPatchVersion: version,
+          droidVersion,
+        },
+      );
       await saveAliasMetadata(metadata);
 
       console.log();
@@ -475,13 +499,22 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         // Save metadata for update command
-        const metadata = createMetadata(alias, path, {
-          isCustom: !!isCustom,
-          skipLogin: !!skipLogin,
-          apiBase: apiBase || null,
-          websearch: !!websearch,
-          reasoningEffort: !!reasoningEffort,
-        });
+        const droidVersion = getDroidVersion(path);
+        const metadata = createMetadata(
+          alias,
+          path,
+          {
+            isCustom: !!isCustom,
+            skipLogin: !!skipLogin,
+            apiBase: apiBase || null,
+            websearch: !!websearch,
+            reasoningEffort: !!reasoningEffort,
+          },
+          {
+            droidPatchVersion: version,
+            droidVersion,
+          },
+        );
         await saveAliasMetadata(metadata);
       }
 

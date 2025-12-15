@@ -13,7 +13,11 @@ import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
-import { removeAliasMetadata } from "./metadata.ts";
+import {
+  removeAliasMetadata,
+  loadAliasMetadata,
+  formatPatches,
+} from "./metadata.ts";
 
 const DROID_PATCH_DIR = join(homedir(), ".droid-patch");
 const ALIASES_DIR = join(DROID_PATCH_DIR, "aliases");
@@ -572,6 +576,36 @@ export async function listAliases(): Promise<void> {
         ),
       );
       console.log(styleText("gray", `    → ${alias.target}`));
+
+      // Load and display metadata
+      const meta = await loadAliasMetadata(alias.name);
+      if (meta) {
+        // Version info
+        const patchVer = meta.droidPatchVersion
+          ? `droid-patch@${meta.droidPatchVersion}`
+          : "unknown";
+        const droidVer = meta.droidVersion
+          ? `droid@${meta.droidVersion}`
+          : "unknown";
+        console.log(
+          styleText("gray", `    Versions: ${patchVer}, ${droidVer}`),
+        );
+
+        // Flags/patches
+        const flags = formatPatches(meta.patches);
+        console.log(styleText("gray", `    Flags: ${flags}`));
+
+        // Created time
+        if (meta.createdAt) {
+          const date = new Date(meta.createdAt).toLocaleString();
+          console.log(styleText("gray", `    Created: ${date}`));
+        }
+      } else {
+        console.log(
+          styleText("yellow", `    (no metadata - created by older version)`),
+        );
+      }
+      console.log();
     }
   }
 
