@@ -26,6 +26,9 @@ npx droid-patch --skip-login droid-nologin
 # Patch with --websearch to enable local search proxy
 npx droid-patch --websearch droid-search
 
+# Patch with --websearch --standalone for fully local mode (mock non-LLM APIs)
+npx droid-patch --websearch --standalone droid-local
+
 # Patch with --reasoning-effort to enable reasoning for custom models
 npx droid-patch --reasoning-effort droid-reasoning
 
@@ -54,18 +57,20 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### Available Options
 
-| Option               | Description                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `--is-custom`        | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models) |
-| `--skip-login`       | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                   |
-| `--api-base <url>`   | Replace Factory API URL with a custom server (max 22 chars)                          |
-| `--websearch`        | Inject local WebSearch proxy with multiple search providers                          |
-| `--reasoning-effort` | Enable reasoning effort UI selector for custom models (set to high)                  |
-| `--dry-run`          | Verify patches without actually modifying the binary                                 |
-| `-p, --path <path>`  | Path to the droid binary (default: `~/.droid/bin/droid`)                             |
-| `-o, --output <dir>` | Output directory for patched binary (creates file without alias)                     |
-| `--no-backup`        | Skip creating backup of original binary                                              |
-| `-v, --verbose`      | Enable verbose output                                                                |
+| Option                | Description                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models) |
+| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                   |
+| `--api-base <url>`    | Replace Factory API URL with a custom server (max 22 chars)                          |
+| `--websearch`         | Inject local WebSearch proxy with multiple search providers                          |
+| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                  |
+| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                  |
+| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                         |
+| `--dry-run`           | Verify patches without actually modifying the binary                                 |
+| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                             |
+| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                     |
+| `--no-backup`         | Skip creating backup of original binary                                              |
+| `-v, --verbose`       | Enable verbose output                                                                |
 
 ### Manage Aliases and Files
 
@@ -252,6 +257,52 @@ Available values:
 | `low` | Low reasoning effort |
 
 **Note**: The `xhigh` value bypasses validation and is sent directly to your API. Make sure your custom model/proxy supports this parameter.
+
+### `--standalone`
+
+Enables standalone mode when used with `--websearch`. In this mode, non-LLM Factory APIs are mocked locally instead of being forwarded to Factory servers.
+
+**Purpose**: Reduce unnecessary network requests and enable fully local operation (except for LLM API calls).
+
+**How it works**:
+
+- **Whitelist approach**: Only `/api/llm/a/*` (Anthropic) and `/api/llm/o/*` (OpenAI) are forwarded to upstream
+- All other Factory APIs are mocked:
+  - `/api/sessions/create` → Returns unique local session ID
+  - `/api/cli/whoami` → Returns 401 (triggers local token fallback)
+  - `/api/tools/get-url-contents` → Returns 404 (triggers local URL fetch)
+  - Other APIs → Returns empty `{}` response
+
+**Usage**:
+
+```bash
+# Standalone mode with websearch
+npx droid-patch --websearch --standalone droid-local
+
+# Combine with other patches for fully local setup
+npx droid-patch --is-custom --skip-login --websearch --standalone droid-full-local
+```
+
+### `--disable-telemetry`
+
+Disables telemetry data uploads and Sentry error reporting.
+
+**Purpose**: Prevent droid from sending usage data and error reports to Factory servers.
+
+**How it works**:
+
+- Breaks Sentry environment variable checks (`ENABLE_SENTRY`, `VITE_VERCEL_ENV`)
+- Makes `flushToWeb()` always return early, preventing any telemetry fetch requests
+
+**Usage**:
+
+```bash
+# Disable telemetry only
+npx droid-patch --disable-telemetry droid-private
+
+# Combine with other patches
+npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
+```
 
 ---
 
@@ -541,6 +592,15 @@ droid-search  # Just works!
 # Full-featured droid
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
+# Standalone mode: websearch + mock non-LLM APIs
+npx droid-patch --websearch --standalone droid-local
+
+# Privacy mode: disable telemetry
+npx droid-patch --disable-telemetry droid-private
+
+# Full local setup: all features combined
+npx droid-patch --is-custom --skip-login --websearch --standalone --disable-telemetry droid-full-local
+
 # Websearch with custom backend
 npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
@@ -554,6 +614,7 @@ npx droid-patch list
 # Clean up
 npx droid-patch remove droid-search              # remove single alias
 npx droid-patch remove --flag=websearch          # remove all websearch aliases
+npx droid-patch remove --flag=standalone         # remove all standalone aliases
 npx droid-patch remove --patch-version=0.4.0     # remove by droid-patch version
 npx droid-patch clear                            # remove everything
 ```

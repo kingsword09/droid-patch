@@ -26,6 +26,9 @@ npx droid-patch --skip-login droid-nologin
 # 使用 --websearch 启用本地搜索代理
 npx droid-patch --websearch droid-search
 
+# 使用 --websearch --standalone 启用完全本地模式（mock 非 LLM API）
+npx droid-patch --websearch --standalone droid-local
+
 # 使用 --reasoning-effort 为自定义模型启用推理功能
 npx droid-patch --reasoning-effort droid-reasoning
 
@@ -54,18 +57,20 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### 可用选项
 
-| 选项                 | 说明                                                                |
-| -------------------- | ------------------------------------------------------------------- |
-| `--is-custom`        | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩） |
-| `--skip-login`       | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                         |
-| `--api-base <url>`   | 将 Factory API URL 替换为自定义服务器（最多 22 个字符）             |
-| `--websearch`        | 注入本地 WebSearch 代理，支持多个搜索提供商                         |
-| `--reasoning-effort` | 为自定义模型启用推理强度 UI 选择器（设置为 high）                   |
-| `--dry-run`          | 验证修补但不实际修改二进制文件                                      |
-| `-p, --path <path>`  | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                  |
-| `-o, --output <dir>` | 修补后二进制文件的输出目录（直接创建文件，不创建别名）              |
-| `--no-backup`        | 跳过创建原始二进制文件的备份                                        |
-| `-v, --verbose`      | 启用详细输出                                                        |
+| 选项                  | 说明                                                                |
+| --------------------- | ------------------------------------------------------------------- |
+| `--is-custom`         | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩） |
+| `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                         |
+| `--api-base <url>`    | 将 Factory API URL 替换为自定义服务器（最多 22 个字符）             |
+| `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                         |
+| `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）   |
+| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                   |
+| `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                  |
+| `--dry-run`           | 验证修补但不实际修改二进制文件                                      |
+| `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                  |
+| `-o, --output <dir>`  | 修补后二进制文件的输出目录（直接创建文件，不创建别名）              |
+| `--no-backup`         | 跳过创建原始二进制文件的备份                                        |
+| `-v, --verbose`       | 启用详细输出                                                        |
 
 ### 管理别名和文件
 
@@ -252,6 +257,52 @@ npx droid-patch --is-custom --reasoning-effort droid-full
 | `low` | 低推理强度 |
 
 **注意**：`xhigh` 值会绕过验证直接发送到 API。请确保您的自定义模型/代理支持此参数。
+
+### `--standalone`
+
+与 `--websearch` 配合使用时启用独立模式。在此模式下，非 LLM 的 Factory API 会在本地 mock，而不是转发到 Factory 服务器。
+
+**用途**：减少不必要的网络请求，实现完全本地化运行（LLM API 调用除外）。
+
+**工作原理**：
+
+- **白名单方式**：只有 `/api/llm/a/*`（Anthropic）和 `/api/llm/o/*`（OpenAI）会转发到上游
+- 其他所有 Factory API 都会被 mock：
+  - `/api/sessions/create` → 返回唯一的本地 session ID
+  - `/api/cli/whoami` → 返回 401（触发本地 token 回退）
+  - `/api/tools/get-url-contents` → 返回 404（触发本地 URL 获取）
+  - 其他 API → 返回空 `{}` 响应
+
+**使用方法**：
+
+```bash
+# 独立模式 + websearch
+npx droid-patch --websearch --standalone droid-local
+
+# 与其他补丁组合实现完全本地化
+npx droid-patch --is-custom --skip-login --websearch --standalone droid-full-local
+```
+
+### `--disable-telemetry`
+
+禁用遥测数据上传和 Sentry 错误报告。
+
+**用途**：阻止 droid 向 Factory 服务器发送使用数据和错误报告。
+
+**工作原理**：
+
+- 破坏 Sentry 环境变量检查（`ENABLE_SENTRY`、`VITE_VERCEL_ENV`）
+- 使 `flushToWeb()` 始终提前返回，阻止任何遥测 fetch 请求
+
+**使用方法**：
+
+```bash
+# 仅禁用遥测
+npx droid-patch --disable-telemetry droid-private
+
+# 与其他补丁组合
+npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
+```
 
 ---
 
@@ -541,6 +592,15 @@ droid-search  # 直接使用！
 # 全功能 droid
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
+# 独立模式：websearch + mock 非 LLM API
+npx droid-patch --websearch --standalone droid-local
+
+# 隐私模式：禁用遥测
+npx droid-patch --disable-telemetry droid-private
+
+# 完全本地化：所有功能组合
+npx droid-patch --is-custom --skip-login --websearch --standalone --disable-telemetry droid-full-local
+
 # websearch + 自定义后端
 npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
@@ -554,6 +614,7 @@ npx droid-patch list
 # 清理
 npx droid-patch remove droid-search              # 删除单个别名
 npx droid-patch remove --flag=websearch          # 删除所有 websearch 别名
+npx droid-patch remove --flag=standalone         # 删除所有 standalone 别名
 npx droid-patch remove --patch-version=0.4.0     # 按 droid-patch 版本删除
 npx droid-patch clear                            # 删除所有
 ```
