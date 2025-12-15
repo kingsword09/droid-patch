@@ -374,10 +374,11 @@ export async function removeAlias(aliasName: string): Promise<void> {
         const stats = lstatSync(pathSymlink);
         if (stats.isSymbolicLink()) {
           const target = await readlink(pathSymlink);
-          // Support both regular aliases (.droid-patch/bins) and websearch wrappers (.droid-patch/websearch)
+          // Support regular aliases, old websearch wrappers, and new proxy wrappers
           if (
             target.includes(".droid-patch/bins") ||
-            target.includes(".droid-patch/websearch")
+            target.includes(".droid-patch/websearch") ||
+            target.includes(".droid-patch/proxy")
           ) {
             await unlink(pathSymlink);
             console.log(styleText("green", `    Removed: ${pathSymlink}`));
@@ -406,27 +407,52 @@ export async function removeAlias(aliasName: string): Promise<void> {
     removed = true;
   }
 
-  // Remove websearch wrapper and related files if exist
+  // Remove new proxy wrapper and related files if exist
+  const proxyDir = join(DROID_PATCH_DIR, "proxy");
+  const proxyWrapperPath = join(proxyDir, aliasName);
+  const proxyScriptPath = join(proxyDir, `${aliasName}-proxy.js`);
+
+  if (existsSync(proxyWrapperPath)) {
+    await unlink(proxyWrapperPath);
+    console.log(styleText("green", `    Removed wrapper: ${proxyWrapperPath}`));
+    removed = true;
+  }
+
+  if (existsSync(proxyScriptPath)) {
+    await unlink(proxyScriptPath);
+    console.log(
+      styleText("green", `    Removed proxy script: ${proxyScriptPath}`),
+    );
+    removed = true;
+  }
+
+  // Remove old websearch wrapper and related files if exist (backward compatibility)
   const websearchDir = join(DROID_PATCH_DIR, "websearch");
   const wrapperPath = join(websearchDir, aliasName);
-  const proxyPath = join(websearchDir, `${aliasName}-proxy.js`);
+  const oldProxyPath = join(websearchDir, `${aliasName}-proxy.js`);
   const preloadPath = join(websearchDir, `${aliasName}-preload.js`);
 
   if (existsSync(wrapperPath)) {
     await unlink(wrapperPath);
-    console.log(styleText("green", `    Removed wrapper: ${wrapperPath}`));
+    console.log(
+      styleText("green", `    Removed legacy wrapper: ${wrapperPath}`),
+    );
     removed = true;
   }
 
-  if (existsSync(proxyPath)) {
-    await unlink(proxyPath);
-    console.log(styleText("green", `    Removed proxy: ${proxyPath}`));
+  if (existsSync(oldProxyPath)) {
+    await unlink(oldProxyPath);
+    console.log(
+      styleText("green", `    Removed legacy proxy: ${oldProxyPath}`),
+    );
     removed = true;
   }
 
   if (existsSync(preloadPath)) {
     await unlink(preloadPath);
-    console.log(styleText("green", `    Removed preload: ${preloadPath}`));
+    console.log(
+      styleText("green", `    Removed legacy preload: ${preloadPath}`),
+    );
     removed = true;
   }
 
@@ -474,10 +500,11 @@ export async function listAliases(): Promise<void> {
           const stats = lstatSync(fullPath);
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
-            // Support both regular aliases and websearch wrappers
+            // Support regular aliases, old websearch wrappers, and new proxy wrappers
             if (
               target.includes(".droid-patch/bins") ||
-              target.includes(".droid-patch/websearch")
+              target.includes(".droid-patch/websearch") ||
+              target.includes(".droid-patch/proxy")
             ) {
               aliases.push({
                 name: file,
