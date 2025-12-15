@@ -13,11 +13,7 @@ import { join, basename, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
-import {
-  removeAliasMetadata,
-  loadAliasMetadata,
-  formatPatches,
-} from "./metadata.ts";
+import { removeAliasMetadata, loadAliasMetadata, formatPatches } from "./metadata.ts";
 
 const DROID_PATCH_DIR = join(homedir(), ".droid-patch");
 const ALIASES_DIR = join(DROID_PATCH_DIR, "aliases");
@@ -111,19 +107,13 @@ function isPathConfigured(shellConfigPath: string): boolean {
 
   try {
     const content = readFileSync(shellConfigPath, "utf-8");
-    return (
-      content.includes(".droid-patch/aliases") ||
-      content.includes("droid-patch/aliases")
-    );
+    return content.includes(".droid-patch/aliases") || content.includes("droid-patch/aliases");
   } catch {
     return false;
   }
 }
 
-function addPathToShellConfig(
-  shellConfigPath: string,
-  verbose = false,
-): boolean {
+function addPathToShellConfig(shellConfigPath: string, verbose = false): boolean {
   const shell = process.env.SHELL || "/bin/bash";
   const shellName = basename(shell);
 
@@ -137,17 +127,12 @@ function addPathToShellConfig(
   try {
     appendFileSync(shellConfigPath, exportLine);
     if (verbose) {
-      console.log(
-        styleText("gray", `    Added PATH export to: ${shellConfigPath}`),
-      );
+      console.log(styleText("gray", `    Added PATH export to: ${shellConfigPath}`));
     }
     return true;
   } catch (error) {
     console.log(
-      styleText(
-        "yellow",
-        `[!] Could not write to ${shellConfigPath}: ${(error as Error).message}`,
-      ),
+      styleText("yellow", `[!] Could not write to ${shellConfigPath}: ${(error as Error).message}`),
     );
     return false;
   }
@@ -166,9 +151,7 @@ export async function createAlias(
 ): Promise<CreateAliasResult> {
   ensureDirectories();
 
-  console.log(
-    styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`),
-  );
+  console.log(styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`));
 
   const writablePathDir = findWritablePathDir();
 
@@ -209,14 +192,10 @@ export async function createAlias(
       }
     }
 
-    console.log(
-      styleText("green", `[*] Created: ${targetPath} -> ${binaryDest}`),
-    );
+    console.log(styleText("green", `[*] Created: ${targetPath} -> ${binaryDest}`));
     console.log();
     console.log(styleText("green", "─".repeat(60)));
-    console.log(
-      styleText(["green", "bold"], "  ALIAS READY - NO ACTION REQUIRED!"),
-    );
+    console.log(styleText(["green", "bold"], "  ALIAS READY - NO ACTION REQUIRED!"));
     console.log(styleText("green", "─".repeat(60)));
     console.log();
     console.log(
@@ -234,12 +213,7 @@ export async function createAlias(
     };
   }
 
-  console.log(
-    styleText(
-      "yellow",
-      "[*] No writable PATH directory found, using fallback...",
-    ),
-  );
+  console.log(styleText("yellow", "[*] No writable PATH directory found, using fallback..."));
 
   const binaryDest = join(BINS_DIR, `${aliasName}-patched`);
   await copyFile(patchedBinaryPath, binaryDest);
@@ -258,17 +232,9 @@ export async function createAlias(
       console.log(styleText("green", "[*] Binary re-signed successfully"));
     } catch {
       console.log(
-        styleText(
-          "yellow",
-          "[!] Could not re-sign binary. You may need to do this manually:",
-        ),
+        styleText("yellow", "[!] Could not re-sign binary. You may need to do this manually:"),
       );
-      console.log(
-        styleText(
-          "gray",
-          `    codesign --force --deep --sign - "${binaryDest}"`,
-        ),
-      );
+      console.log(styleText("gray", `    codesign --force --deep --sign - "${binaryDest}"`));
     }
 
     try {
@@ -290,17 +256,13 @@ export async function createAlias(
   await symlink(binaryDest, symlinkPath);
   await chmod(symlinkPath, 0o755);
 
-  console.log(
-    styleText("green", `[*] Created symlink: ${symlinkPath} -> ${binaryDest}`),
-  );
+  console.log(styleText("green", `[*] Created symlink: ${symlinkPath} -> ${binaryDest}`));
 
   const shellConfig = getShellConfigPath();
 
   if (!checkPathInclusion()) {
     if (!isPathConfigured(shellConfig)) {
-      console.log(
-        styleText("white", `[*] Configuring PATH in ${shellConfig}...`),
-      );
+      console.log(styleText("white", `[*] Configuring PATH in ${shellConfig}...`));
 
       if (addPathToShellConfig(shellConfig, verbose)) {
         console.log(styleText("green", `[*] PATH configured successfully!`));
@@ -309,9 +271,7 @@ export async function createAlias(
         console.log(styleText(["yellow", "bold"], "  ACTION REQUIRED"));
         console.log(styleText("yellow", "─".repeat(60)));
         console.log();
-        console.log(
-          styleText("white", "To use the alias in this terminal, run:"),
-        );
+        console.log(styleText("white", "To use the alias in this terminal, run:"));
         console.log();
         console.log(styleText("cyan", `  source ${shellConfig}`));
         console.log();
@@ -321,9 +281,7 @@ export async function createAlias(
         const exportLine = `export PATH="${ALIASES_DIR}:$PATH"`;
         console.log();
         console.log(styleText("yellow", "─".repeat(60)));
-        console.log(
-          styleText(["yellow", "bold"], "  Manual PATH Configuration Required"),
-        );
+        console.log(styleText(["yellow", "bold"], "  Manual PATH Configuration Required"));
         console.log(styleText("yellow", "─".repeat(60)));
         console.log();
         console.log(styleText("white", "Add this line to your shell config:"));
@@ -333,9 +291,7 @@ export async function createAlias(
         console.log(styleText("yellow", "─".repeat(60)));
       }
     } else {
-      console.log(
-        styleText("green", `[*] PATH already configured in ${shellConfig}`),
-      );
+      console.log(styleText("green", `[*] PATH already configured in ${shellConfig}`));
       console.log();
       console.log(
         styleText(
@@ -345,9 +301,7 @@ export async function createAlias(
       );
     }
   } else {
-    console.log(
-      styleText("green", `[*] PATH already includes aliases directory`),
-    );
+    console.log(styleText("green", `[*] PATH already includes aliases directory`));
     console.log();
     console.log(
       styleText(
@@ -364,9 +318,7 @@ export async function createAlias(
 }
 
 export async function removeAlias(aliasName: string): Promise<void> {
-  console.log(
-    styleText("white", `[*] Removing alias: ${styleText("cyan", aliasName)}`),
-  );
+  console.log(styleText("white", `[*] Removing alias: ${styleText("cyan", aliasName)}`));
 
   let removed = false;
 
@@ -424,9 +376,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
 
   if (existsSync(proxyScriptPath)) {
     await unlink(proxyScriptPath);
-    console.log(
-      styleText("green", `    Removed proxy script: ${proxyScriptPath}`),
-    );
+    console.log(styleText("green", `    Removed proxy script: ${proxyScriptPath}`));
     removed = true;
   }
 
@@ -438,25 +388,19 @@ export async function removeAlias(aliasName: string): Promise<void> {
 
   if (existsSync(wrapperPath)) {
     await unlink(wrapperPath);
-    console.log(
-      styleText("green", `    Removed legacy wrapper: ${wrapperPath}`),
-    );
+    console.log(styleText("green", `    Removed legacy wrapper: ${wrapperPath}`));
     removed = true;
   }
 
   if (existsSync(oldProxyPath)) {
     await unlink(oldProxyPath);
-    console.log(
-      styleText("green", `    Removed legacy proxy: ${oldProxyPath}`),
-    );
+    console.log(styleText("green", `    Removed legacy proxy: ${oldProxyPath}`));
     removed = true;
   }
 
   if (existsSync(preloadPath)) {
     await unlink(preloadPath);
-    console.log(
-      styleText("green", `    Removed legacy preload: ${preloadPath}`),
-    );
+    console.log(styleText("green", `    Removed legacy preload: ${preloadPath}`));
     removed = true;
   }
 
@@ -470,9 +414,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
   if (!removed) {
     console.log(styleText("yellow", `    Alias "${aliasName}" not found`));
   } else {
-    console.log(
-      styleText("green", `[*] Alias "${aliasName}" removed successfully`),
-    );
+    console.log(styleText("green", `[*] Alias "${aliasName}" removed successfully`));
   }
 }
 
@@ -556,12 +498,7 @@ export async function listAliases(): Promise<void> {
   if (aliases.length === 0) {
     console.log(styleText("gray", "  No aliases configured."));
     console.log();
-    console.log(
-      styleText(
-        "gray",
-        "  Create one with: npx droid-patch --is-custom <alias-name>",
-      ),
-    );
+    console.log(styleText("gray", "  Create one with: npx droid-patch --is-custom <alias-name>"));
   } else {
     console.log(styleText("white", `  Found ${aliases.length} alias(es):`));
     console.log();
@@ -569,12 +506,7 @@ export async function listAliases(): Promise<void> {
       const status = alias.immediate
         ? styleText("green", "✓ immediate")
         : styleText("yellow", "requires source");
-      console.log(
-        styleText(
-          "green",
-          `  • ${styleText(["cyan", "bold"], alias.name)} [${status}]`,
-        ),
-      );
+      console.log(styleText("green", `  • ${styleText(["cyan", "bold"], alias.name)} [${status}]`));
       console.log(styleText("gray", `    → ${alias.target}`));
 
       // Load and display metadata
@@ -584,12 +516,8 @@ export async function listAliases(): Promise<void> {
         const patchVer = meta.droidPatchVersion
           ? `droid-patch@${meta.droidPatchVersion}`
           : "unknown";
-        const droidVer = meta.droidVersion
-          ? `droid@${meta.droidVersion}`
-          : "unknown";
-        console.log(
-          styleText("gray", `    Versions: ${patchVer}, ${droidVer}`),
-        );
+        const droidVer = meta.droidVersion ? `droid@${meta.droidVersion}` : "unknown";
+        console.log(styleText("gray", `    Versions: ${patchVer}, ${droidVer}`));
 
         // Flags/patches
         const flags = formatPatches(meta.patches);
@@ -601,9 +529,7 @@ export async function listAliases(): Promise<void> {
           console.log(styleText("gray", `    Created: ${date}`));
         }
       } else {
-        console.log(
-          styleText("yellow", `    (no metadata - created by older version)`),
-        );
+        console.log(styleText("yellow", `    (no metadata - created by older version)`));
       }
       console.log();
     }
@@ -633,10 +559,7 @@ export async function replaceOriginal(
   ensureDirectories();
 
   console.log(
-    styleText(
-      "white",
-      `[*] Replacing original binary: ${styleText("cyan", originalPath)}`,
-    ),
+    styleText("white", `[*] Replacing original binary: ${styleText("cyan", originalPath)}`),
   );
 
   const latestBackupPath = join(BINS_DIR, "droid-original-latest");
@@ -646,9 +569,7 @@ export async function replaceOriginal(
     console.log(styleText("green", `[*] Created backup: ${latestBackupPath}`));
   } else {
     if (verbose) {
-      console.log(
-        styleText("gray", `    Backup already exists: ${latestBackupPath}`),
-      );
+      console.log(styleText("gray", `    Backup already exists: ${latestBackupPath}`));
     }
   }
 
@@ -664,18 +585,8 @@ export async function replaceOriginal(
       });
       console.log(styleText("green", "[*] Binary re-signed successfully"));
     } catch {
-      console.log(
-        styleText(
-          "yellow",
-          "[!] Could not re-sign binary. You may need to run:",
-        ),
-      );
-      console.log(
-        styleText(
-          "gray",
-          `    codesign --force --deep --sign - "${originalPath}"`,
-        ),
-      );
+      console.log(styleText("yellow", "[!] Could not re-sign binary. You may need to run:"));
+      console.log(styleText("gray", `    codesign --force --deep --sign - "${originalPath}"`));
     }
 
     try {
@@ -690,9 +601,7 @@ export async function replaceOriginal(
   console.log(styleText(["green", "bold"], "  REPLACEMENT COMPLETE"));
   console.log(styleText("green", "─".repeat(60)));
   console.log();
-  console.log(
-    styleText("white", "The patched binary is now active in all terminals."),
-  );
+  console.log(styleText("white", "The patched binary is now active in all terminals."));
   console.log(styleText("white", "No need to restart or source anything!"));
   console.log();
   console.log(styleText("gray", `To restore the original, run:`));
@@ -716,9 +625,7 @@ export async function createAliasForWrapper(
 ): Promise<CreateAliasResult> {
   ensureDirectories();
 
-  console.log(
-    styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`),
-  );
+  console.log(styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`));
 
   const writablePathDir = findWritablePathDir();
 
@@ -738,14 +645,10 @@ export async function createAliasForWrapper(
 
     await symlink(wrapperPath, targetPath);
 
-    console.log(
-      styleText("green", `[*] Created: ${targetPath} -> ${wrapperPath}`),
-    );
+    console.log(styleText("green", `[*] Created: ${targetPath} -> ${wrapperPath}`));
     console.log();
     console.log(styleText("green", "─".repeat(60)));
-    console.log(
-      styleText(["green", "bold"], "  ALIAS READY - NO ACTION REQUIRED!"),
-    );
+    console.log(styleText(["green", "bold"], "  ALIAS READY - NO ACTION REQUIRED!"));
     console.log(styleText("green", "─".repeat(60)));
     console.log();
     console.log(
@@ -764,12 +667,7 @@ export async function createAliasForWrapper(
   }
 
   // Fallback: use ~/.droid-patch/aliases
-  console.log(
-    styleText(
-      "yellow",
-      "[*] No writable PATH directory found, using fallback...",
-    ),
-  );
+  console.log(styleText("yellow", "[*] No writable PATH directory found, using fallback..."));
 
   const symlinkPath = join(ALIASES_DIR, aliasName);
 
@@ -782,17 +680,13 @@ export async function createAliasForWrapper(
 
   await symlink(wrapperPath, symlinkPath);
 
-  console.log(
-    styleText("green", `[*] Created symlink: ${symlinkPath} -> ${wrapperPath}`),
-  );
+  console.log(styleText("green", `[*] Created symlink: ${symlinkPath} -> ${wrapperPath}`));
 
   const shellConfig = getShellConfigPath();
 
   if (!checkPathInclusion()) {
     if (!isPathConfigured(shellConfig)) {
-      console.log(
-        styleText("white", `[*] Configuring PATH in ${shellConfig}...`),
-      );
+      console.log(styleText("white", `[*] Configuring PATH in ${shellConfig}...`));
 
       if (addPathToShellConfig(shellConfig, verbose)) {
         console.log(styleText("green", `[*] PATH configured successfully!`));
@@ -801,9 +695,7 @@ export async function createAliasForWrapper(
         console.log(styleText(["yellow", "bold"], "  ACTION REQUIRED"));
         console.log(styleText("yellow", "─".repeat(60)));
         console.log();
-        console.log(
-          styleText("white", "To use the alias in this terminal, run:"),
-        );
+        console.log(styleText("white", "To use the alias in this terminal, run:"));
         console.log();
         console.log(styleText("cyan", `  source ${shellConfig}`));
         console.log();
@@ -813,9 +705,7 @@ export async function createAliasForWrapper(
         const exportLine = `export PATH="${ALIASES_DIR}:$PATH"`;
         console.log();
         console.log(styleText("yellow", "─".repeat(60)));
-        console.log(
-          styleText(["yellow", "bold"], "  Manual PATH Configuration Required"),
-        );
+        console.log(styleText(["yellow", "bold"], "  Manual PATH Configuration Required"));
         console.log(styleText("yellow", "─".repeat(60)));
         console.log();
         console.log(styleText("white", "Add this line to your shell config:"));
@@ -825,9 +715,7 @@ export async function createAliasForWrapper(
         console.log(styleText("yellow", "─".repeat(60)));
       }
     } else {
-      console.log(
-        styleText("green", `[*] PATH already configured in ${shellConfig}`),
-      );
+      console.log(styleText("green", `[*] PATH already configured in ${shellConfig}`));
       console.log();
       console.log(
         styleText(
@@ -837,9 +725,7 @@ export async function createAliasForWrapper(
       );
     }
   } else {
-    console.log(
-      styleText("green", `[*] PATH already includes aliases directory`),
-    );
+    console.log(styleText("green", `[*] PATH already includes aliases directory`));
     console.log();
     console.log(
       styleText(
@@ -890,12 +776,7 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
       console.log(styleText(["green", "bold"], "  RESTORE COMPLETE"));
       console.log(styleText("green", "═".repeat(60)));
       console.log();
-      console.log(
-        styleText(
-          "green",
-          "Original droid binary has been restored from local backup.",
-        ),
-      );
+      console.log(styleText("green", "Original droid binary has been restored from local backup."));
       return;
     }
 
@@ -903,9 +784,7 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
     console.log(styleText("gray", `    Checked: ${latestBackupPath}`));
     console.log(styleText("gray", `    Checked: ${localBackup}`));
     console.log();
-    console.log(
-      styleText("gray", "If you have a manual backup, restore it with:"),
-    );
+    console.log(styleText("gray", "If you have a manual backup, restore it with:"));
     console.log(styleText("cyan", `  cp /path/to/backup ${originalPath}`));
     return;
   }
@@ -938,21 +817,14 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
   console.log(styleText("green", "═".repeat(60)));
   console.log();
   console.log(styleText("green", "Original droid binary has been restored."));
-  console.log(
-    styleText("green", "All terminals will now use the original version."),
-  );
+  console.log(styleText("green", "All terminals will now use the original version."));
 }
 
 /**
  * Filter options for removing aliases
  * Uses the same names as CLI options for consistency
  */
-export type FilterFlag =
-  | "is-custom"
-  | "skip-login"
-  | "websearch"
-  | "api-base"
-  | "reasoning-effort";
+export type FilterFlag = "is-custom" | "skip-login" | "websearch" | "api-base" | "reasoning-effort";
 
 export interface RemoveFilterOptions {
   /** Remove aliases created by this droid-patch version */
@@ -966,9 +838,7 @@ export interface RemoveFilterOptions {
 /**
  * Remove aliases matching filter criteria
  */
-export async function removeAliasesByFilter(
-  filter: RemoveFilterOptions,
-): Promise<void> {
+export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promise<void> {
   console.log(styleText("cyan", "═".repeat(60)));
   console.log(styleText(["cyan", "bold"], "  Remove Aliases by Filter"));
   console.log(styleText("cyan", "═".repeat(60)));
@@ -976,22 +846,13 @@ export async function removeAliasesByFilter(
 
   // Show filter criteria
   if (filter.patchVersion) {
-    console.log(
-      styleText(
-        "white",
-        `  Filter: droid-patch version = ${filter.patchVersion}`,
-      ),
-    );
+    console.log(styleText("white", `  Filter: droid-patch version = ${filter.patchVersion}`));
   }
   if (filter.droidVersion) {
-    console.log(
-      styleText("white", `  Filter: droid version = ${filter.droidVersion}`),
-    );
+    console.log(styleText("white", `  Filter: droid version = ${filter.droidVersion}`));
   }
   if (filter.flags && filter.flags.length > 0) {
-    console.log(
-      styleText("white", `  Filter: flags = ${filter.flags.join(", ")}`),
-    );
+    console.log(styleText("white", `  Filter: flags = ${filter.flags.join(", ")}`));
   }
   console.log();
 
@@ -1106,9 +967,7 @@ export async function removeAliasesByFilter(
     return;
   }
 
-  console.log(
-    styleText("white", `  Found ${matchingAliases.length} matching alias(es):`),
-  );
+  console.log(styleText("white", `  Found ${matchingAliases.length} matching alias(es):`));
   for (const name of matchingAliases) {
     console.log(styleText("gray", `    • ${name}`));
   }
@@ -1120,9 +979,7 @@ export async function removeAliasesByFilter(
     console.log();
   }
 
-  console.log(
-    styleText("green", `[*] Removed ${matchingAliases.length} alias(es)`),
-  );
+  console.log(styleText("green", `[*] Removed ${matchingAliases.length} alias(es)`));
 }
 
 /**
@@ -1189,9 +1046,7 @@ export async function clearAllAliases(): Promise<void> {
   if (aliasNames.size === 0) {
     console.log(styleText("yellow", "  No aliases found."));
   } else {
-    console.log(
-      styleText("white", `  Found ${aliasNames.size} alias(es) to remove:`),
-    );
+    console.log(styleText("white", `  Found ${aliasNames.size} alias(es) to remove:`));
     for (const name of aliasNames) {
       console.log(styleText("gray", `    • ${name}`));
     }
@@ -1233,10 +1088,7 @@ export async function clearAllAliases(): Promise<void> {
   }
 
   // Clean up legacy temp files from old versions
-  const legacyTempFiles = [
-    "/tmp/droid-search-proxy.pid",
-    "/tmp/droid-search-proxy.log",
-  ];
+  const legacyTempFiles = ["/tmp/droid-search-proxy.pid", "/tmp/droid-search-proxy.log"];
 
   for (const tempFile of legacyTempFiles) {
     if (existsSync(tempFile)) {
@@ -1267,9 +1119,7 @@ export async function clearAllAliases(): Promise<void> {
         const fullPath = join("/tmp", file);
         try {
           await unlink(fullPath);
-          console.log(
-            styleText("green", `    Removed legacy temp: ${fullPath}`),
-          );
+          console.log(styleText("green", `    Removed legacy temp: ${fullPath}`));
         } catch {
           // Ignore
         }
@@ -1291,7 +1141,5 @@ export async function clearAllAliases(): Promise<void> {
   }
 
   console.log();
-  console.log(
-    styleText("green", "[*] All droid-patch data cleared successfully"),
-  );
+  console.log(styleText("green", "[*] All droid-patch data cleared successfully"));
 }

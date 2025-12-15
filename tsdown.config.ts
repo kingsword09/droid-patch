@@ -12,9 +12,10 @@ export default defineConfig({
   shims: true,
   onSuccess: async () => {
     const fs = await import("node:fs/promises");
-    const content = await fs.readFile("dist/cli.js", "utf-8");
+    // Add shebang to CLI file
+    const content = await fs.readFile("dist/cli.mjs", "utf-8");
     if (!content.startsWith("#!/usr/bin/env node")) {
-      await fs.writeFile("dist/cli.js", `#!/usr/bin/env node\n${content}`);
+      await fs.writeFile("dist/cli.mjs", `#!/usr/bin/env node\n${content}`);
     }
   },
 });

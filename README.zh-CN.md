@@ -54,18 +54,18 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### 可用选项
 
-| 选项 | 说明 |
-|------|------|
-| `--is-custom` | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩） |
-| `--skip-login` | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证 |
-| `--api-base <url>` | 将 Factory API URL 替换为自定义服务器（最多 22 个字符） |
-| `--websearch` | 注入本地 WebSearch 代理，支持多个搜索提供商 |
-| `--reasoning-effort` | 为自定义模型启用推理强度 UI 选择器（设置为 high） |
-| `--dry-run` | 验证修补但不实际修改二进制文件 |
-| `-p, --path <path>` | droid 二进制文件路径（默认：`~/.droid/bin/droid`） |
-| `-o, --output <dir>` | 修补后二进制文件的输出目录（直接创建文件，不创建别名） |
-| `--no-backup` | 跳过创建原始二进制文件的备份 |
-| `-v, --verbose` | 启用详细输出 |
+| 选项                 | 说明                                                                |
+| -------------------- | ------------------------------------------------------------------- |
+| `--is-custom`        | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩） |
+| `--skip-login`       | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                         |
+| `--api-base <url>`   | 将 Factory API URL 替换为自定义服务器（最多 22 个字符）             |
+| `--websearch`        | 注入本地 WebSearch 代理，支持多个搜索提供商                         |
+| `--reasoning-effort` | 为自定义模型启用推理强度 UI 选择器（设置为 high）                   |
+| `--dry-run`          | 验证修补但不实际修改二进制文件                                      |
+| `-p, --path <path>`  | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                  |
+| `-o, --output <dir>` | 修补后二进制文件的输出目录（直接创建文件，不创建别名）              |
+| `--no-backup`        | 跳过创建原始二进制文件的备份                                        |
+| `-v, --verbose`      | 启用详细输出                                                        |
 
 ### 管理别名和文件
 
@@ -147,6 +147,7 @@ export PATH="$HOME/.droid-patch/aliases:$PATH"
 **用途**：无需设置 `FACTORY_API_KEY` 环境变量即可跳过登录/认证要求。
 
 **工作原理**：
+
 - 原始代码通过检查 `process.env.FACTORY_API_KEY` 进行认证
 - 修补后，代码直接使用假密钥字符串，绕过环境变量检查
 - 这是二进制级别的修补，因此在所有终端会话中都有效，无需任何环境设置
@@ -160,6 +161,7 @@ export PATH="$HOME/.droid-patch/aliases:$PATH"
 **限制**：URL 必须不超过 22 个字符（与原始 URL 长度相同）。
 
 **示例**：
+
 ```bash
 # 有效的 URL（<=22 个字符）
 npx droid-patch --api-base "http://127.0.0.1:3000" droid-local
@@ -176,12 +178,14 @@ npx droid-patch --api-base "http://my-long-domain.com:3000" droid  # 错误！
 **用途**：无需 Factory.ai 认证即可使用 WebSearch 功能。
 
 **特性**：
+
 - **多搜索提供商**：支持自动降级
 - **自动启动**：运行别名时代理自动启动
 - **自动关闭**：空闲 5 分钟后代理自动关闭（可配置）
 - **进程检测**：只要 droid 在运行，代理就保持活跃
 
 **使用方法**：
+
 ```bash
 # 创建带 websearch 的别名
 npx droid-patch --websearch droid-search
@@ -193,6 +197,7 @@ droid-search
 ### `--reasoning-effort`
 
 通过修补二进制文件为自定义模型启用推理强度控制：
+
 1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high"]`
 2. 将 `defaultReasoningEffort` 从 `"none"` 改为 `"high"`
 3. 启用推理强度 UI 选择器（通常对自定义模型隐藏）
@@ -201,12 +206,14 @@ droid-search
 **用途**：允许自定义模型使用通常仅对官方模型可用的推理强度功能。
 
 **工作原理**：
+
 - 当 `supportedReasoningEfforts.length > 1` 时，droid UI 会显示推理强度选择器
 - 自定义模型硬编码为 `["none"]`，隐藏了选择器
 - 此补丁将值改为 `["high"]` 并修改 UI 条件以显示选择器
 - 推理强度设置将发送到您的自定义模型 API
 
 **使用方法**：
+
 ```bash
 # 为自定义模型启用推理强度
 npx droid-patch --reasoning-effort droid-reasoning
@@ -248,14 +255,14 @@ npx droid-patch --is-custom --reasoning-effort droid-full
 
 代理按以下顺序尝试提供商，使用第一个成功的：
 
-| 优先级 | 提供商 | 质量 | 免费额度 | 设置难度 |
-|--------|--------|------|----------|----------|
-| 1 | Smithery Exa | 优秀 | 免费（通过 Smithery） | 简单 |
-| 2 | Google PSE | 很好 | 10,000 次/天 | 中等 |
-| 3 | Serper | 很好 | 2,500 免费额度 | 简单 |
-| 4 | Brave Search | 好 | 2,000 次/月 | 简单 |
-| 5 | SearXNG | 好 | 无限（自托管） | 较难 |
-| 6 | DuckDuckGo | 基本 | 无限 | 无需配置 |
+| 优先级 | 提供商       | 质量 | 免费额度              | 设置难度 |
+| ------ | ------------ | ---- | --------------------- | -------- |
+| 1      | Smithery Exa | 优秀 | 免费（通过 Smithery） | 简单     |
+| 2      | Google PSE   | 很好 | 10,000 次/天          | 中等     |
+| 3      | Serper       | 很好 | 2,500 免费额度        | 简单     |
+| 4      | Brave Search | 好   | 2,000 次/月           | 简单     |
+| 5      | SearXNG      | 好   | 无限（自托管）        | 较难     |
+| 6      | DuckDuckGo   | 基本 | 无限                  | 无需配置 |
 
 ---
 
@@ -417,6 +424,7 @@ export SEARXNG_URL="https://searx.be"
 #### 选项 B：使用 Docker 自托管
 
 1. **使用 Docker 运行 SearXNG**
+
    ```bash
    docker run -d \
      --name searxng \
@@ -523,6 +531,7 @@ npx droid-patch proxy-status
 ```
 
 输出显示：
+
 - 代理运行状态
 - 进程 ID
 - Droid 进程检测

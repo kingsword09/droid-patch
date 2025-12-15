@@ -36,9 +36,7 @@ export interface PatchDroidResult {
   patchedCount?: number;
 }
 
-export async function patchDroid(
-  options: PatchOptions,
-): Promise<PatchDroidResult> {
+export async function patchDroid(options: PatchOptions): Promise<PatchDroidResult> {
   const {
     inputPath,
     outputPath,
@@ -57,12 +55,8 @@ export async function patchDroid(
   const stats = await stat(inputPath);
   const fileSizeMB = (stats.size / (1024 * 1024)).toFixed(2);
 
-  console.log(
-    styleText("white", `[*] Reading binary: ${styleText("cyan", inputPath)}`),
-  );
-  console.log(
-    styleText("white", `[*] File size: ${styleText("cyan", fileSizeMB)} MB`),
-  );
+  console.log(styleText("white", `[*] Reading binary: ${styleText("cyan", inputPath)}`));
+  console.log(styleText("white", `[*] File size: ${styleText("cyan", fileSizeMB)} MB`));
   console.log();
 
   const data = await readFile(inputPath);
@@ -75,21 +69,14 @@ export async function patchDroid(
   const results: PatchResult[] = [];
 
   for (const patch of patches) {
-    console.log(
-      styleText(
-        "white",
-        `[*] Checking patch: ${styleText("yellow", patch.name)}`,
-      ),
-    );
+    console.log(styleText("white", `[*] Checking patch: ${styleText("yellow", patch.name)}`));
     console.log(styleText("gray", `    ${patch.description}`));
 
     // Search in the working buffer (which may have earlier patches applied)
     const positions = findAllPositions(workingBuffer, patch.pattern);
 
     if (positions.length === 0) {
-      console.log(
-        styleText("yellow", `    ! Pattern not found - may already be patched`),
-      );
+      console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
       results.push({
         name: patch.name,
         found: 0,
@@ -97,10 +84,7 @@ export async function patchDroid(
         alreadyPatched: workingBuffer.includes(patch.replacement),
       });
 
-      const replacementPositions = findAllPositions(
-        workingBuffer,
-        patch.replacement,
-      );
+      const replacementPositions = findAllPositions(workingBuffer, patch.replacement);
       if (replacementPositions.length > 0) {
         console.log(
           styleText(
@@ -108,38 +92,24 @@ export async function patchDroid(
             `    ✓ Found ${replacementPositions.length} occurrences of patched pattern`,
           ),
         );
-        console.log(
-          styleText("blue", `    ✓ Binary appears to be already patched`),
-        );
+        console.log(styleText("blue", `    ✓ Binary appears to be already patched`));
         results[results.length - 1].alreadyPatched = true;
         results[results.length - 1].success = true;
       }
       continue;
     }
 
-    console.log(
-      styleText("green", `    ✓ Found ${positions.length} occurrences`),
-    );
+    console.log(styleText("green", `    ✓ Found ${positions.length} occurrences`));
 
     if (verbose) {
       for (const pos of positions.slice(0, 5)) {
-        const context = getContext(
-          workingBuffer,
-          pos,
-          patch.pattern.length,
-          25,
-        );
+        const context = getContext(workingBuffer, pos, patch.pattern.length, 25);
         console.log(
-          styleText(
-            "gray",
-            `      @ 0x${pos.toString(16).padStart(8, "0")}: ...${context}...`,
-          ),
+          styleText("gray", `      @ 0x${pos.toString(16).padStart(8, "0")}: ...${context}...`),
         );
       }
       if (positions.length > 5) {
-        console.log(
-          styleText("gray", `      ... and ${positions.length - 5} more`),
-        );
+        console.log(styleText("gray", `      ... and ${positions.length - 5} more`));
       }
     }
 
@@ -171,15 +141,10 @@ export async function patchDroid(
         console.log(styleText("blue", `  [✓] ${result.name}: Already patched`));
       } else if (result.found > 0) {
         console.log(
-          styleText(
-            "green",
-            `  [✓] ${result.name}: ${result.found} occurrences will be patched`,
-          ),
+          styleText("green", `  [✓] ${result.name}: ${result.found} occurrences will be patched`),
         );
       } else {
-        console.log(
-          styleText("yellow", `  [!] ${result.name}: Pattern not found`),
-        );
+        console.log(styleText("yellow", `  [!] ${result.name}: Pattern not found`));
       }
     }
 
@@ -195,12 +160,7 @@ export async function patchDroid(
   if (patchesNeeded.length === 0) {
     const allPatched = results.every((r) => r.alreadyPatched);
     if (allPatched) {
-      console.log(
-        styleText(
-          "blue",
-          "[*] All patches already applied. Binary is up to date.",
-        ),
-      );
+      console.log(styleText("blue", "[*] All patches already applied. Binary is up to date."));
       return {
         success: true,
         outputPath: inputPath,
@@ -216,35 +176,22 @@ export async function patchDroid(
     const backupPath = `${inputPath}.backup`;
     if (!existsSync(backupPath)) {
       await copyFile(inputPath, backupPath);
-      console.log(
-        styleText(
-          "white",
-          `[*] Created backup: ${styleText("cyan", backupPath)}`,
-        ),
-      );
+      console.log(styleText("white", `[*] Created backup: ${styleText("cyan", backupPath)}`));
     } else {
-      console.log(
-        styleText("gray", `[*] Backup already exists: ${backupPath}`),
-      );
+      console.log(styleText("gray", `[*] Backup already exists: ${backupPath}`));
     }
   }
 
   console.log(styleText("white", "[*] Applying patches..."));
   // Patches have already been applied to workingBuffer during the check phase
   // Count total patches applied
-  const totalPatched = results.reduce(
-    (sum, r) => sum + (r.positions?.length || 0),
-    0,
-  );
+  const totalPatched = results.reduce((sum, r) => sum + (r.positions?.length || 0), 0);
 
   console.log(styleText("green", `[*] Applied ${totalPatched} patches`));
 
   await writeFile(finalOutputPath, workingBuffer);
   console.log(
-    styleText(
-      "white",
-      `[*] Patched binary saved: ${styleText("cyan", finalOutputPath)}`,
-    ),
+    styleText("white", `[*] Patched binary saved: ${styleText("cyan", finalOutputPath)}`),
   );
 
   await chmod(finalOutputPath, 0o755);
@@ -260,19 +207,9 @@ export async function patchDroid(
     const newCount = findAllPositions(verifyBuffer, patch.replacement).length;
 
     if (oldCount === 0) {
-      console.log(
-        styleText(
-          "green",
-          `    ✓ ${patch.name}: Verified (${newCount} patched)`,
-        ),
-      );
+      console.log(styleText("green", `    ✓ ${patch.name}: Verified (${newCount} patched)`));
     } else {
-      console.log(
-        styleText(
-          "red",
-          `    ✗ ${patch.name}: ${oldCount} occurrences not patched`,
-        ),
-      );
+      console.log(styleText("red", `    ✗ ${patch.name}: ${oldCount} occurrences not patched`));
       allVerified = false;
     }
   }
