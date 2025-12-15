@@ -85,11 +85,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   )
   .option(
     "--api-base <url>",
-    "Replace Factory API base URL (https://api.factory.ai) with custom URL",
+    "Replace Factory API base URL (https://api.factory.ai) with custom URL (binary patch)",
   )
   .option(
     "--websearch",
-    "Enable local WebSearch via fetch hook (Google PSE + DuckDuckGo fallback)",
+    "Enable local WebSearch proxy (intercepts search requests)",
   )
   .option(
     "--reasoning-effort",
@@ -106,7 +106,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const isCustom = options["is-custom"] as boolean;
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
-    const webSearch = options["websearch"] as boolean;
+    const websearch = options["websearch"] as boolean;
+    // When --websearch is used with --api-base, forward to custom URL
+    // Otherwise forward to official Factory API
+    const websearchTarget = websearch
+      ? apiBase || "https://api.factory.ai"
+      : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
@@ -118,7 +123,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
     // Handle --websearch only (no binary patching needed)
-    if (webSearch && !isCustom && !skipLogin && !apiBase) {
+    // When --websearch is used alone, create proxy wrapper without modifying binary
+    if (websearch && !isCustom && !skipLogin && !reasoningEffort) {
       if (!alias) {
         console.log(
           styleText("red", "Error: Alias name required for --websearch"),
@@ -133,13 +139,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText(["cyan", "bold"], "  Droid WebSearch Setup"));
       console.log(styleText("cyan", "═".repeat(60)));
       console.log();
+      console.log(styleText("white", `Forward target: ${websearchTarget}`));
+      console.log();
 
-      // Create unified websearch files (preload script + wrapper)
-      const websearchDir = join(homedir(), ".droid-patch", "websearch");
+      // Create websearch proxy files (proxy script + wrapper)
+      const proxyDir = join(homedir(), ".droid-patch", "proxy");
       const { wrapperScript } = await createWebSearchUnifiedFiles(
-        websearchDir,
+        proxyDir,
         path,
         alias,
+        websearchTarget,
       );
 
       // Create alias pointing to wrapper
@@ -149,7 +158,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       const metadata = createMetadata(alias, path, {
         isCustom: false,
         skipLogin: false,
-        apiBase: null,
+        apiBase: apiBase || null,
         websearch: true,
         reasoningEffort: false,
       });
@@ -201,7 +210,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       return;
     }
 
-    if (!isCustom && !skipLogin && !apiBase && !webSearch && !reasoningEffort) {
+    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort) {
       console.log(
         styleText("yellow", "No patch flags specified. Available patches:"),
       );
@@ -220,14 +229,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(
         styleText(
           "gray",
-          "  --api-base          Replace Factory API URL with custom server",
+          "  --api-base          Replace Factory API URL (binary patch)",
         ),
       );
       console.log(
-        styleText(
-          "gray",
-          "  --websearch         Enable local WebSearch (Google PSE + DuckDuckGo)",
-        ),
+        styleText("gray", "  --websearch         Enable local WebSearch proxy"),
       );
       console.log(
         styleText(
@@ -250,21 +256,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         ),
       );
       console.log(
-        styleText("cyan", "  npx droid-patch --skip-login -o . my-droid"),
-      );
-      console.log(
-        styleText(
-          "cyan",
-          "  npx droid-patch --api-base http://localhost:3000 droid-local",
-        ),
-      );
-      console.log(
         styleText("cyan", "  npx droid-patch --websearch droid-search"),
       );
       console.log(
         styleText(
           "cyan",
-          "  npx droid-patch --reasoning-effort high droid-reasoning",
+          "  npx droid-patch --websearch --api-base=http://127.0.0.1:20002 my-droid",
         ),
       );
       process.exit(1);
@@ -311,7 +308,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Add api-base patch: replace the Factory API base URL
     // Original: "https://api.factory.ai" (22 chars)
     // We need to pad the replacement URL to be exactly 22 chars
-    if (apiBase) {
+    // Note: When --websearch is used, --api-base sets the forward target instead of binary patching
+    if (apiBase && !websearch) {
       const originalUrl = "https://api.factory.ai";
       const originalLength = originalUrl.length; // 22 chars
 
@@ -456,53 +454,20 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log();
 
         // If --websearch is also used, create wrapper and point to it
-        if (webSearch) {
-          const websearchDir = join(homedir(), ".droid-patch", "websearch");
+        if (websearch) {
+          const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const { wrapperScript } = await createWebSearchUnifiedFiles(
-            websearchDir,
+            proxyDir,
             result.outputPath,
             alias,
+            websearchTarget,
           );
           await createAliasForWrapper(wrapperScript, alias, verbose);
 
           console.log();
-          console.log(styleText("cyan", "WebSearch providers (optional):"));
+          console.log(styleText("cyan", "WebSearch enabled"));
           console.log(
-            styleText(
-              "gray",
-              "  Works out of the box with DuckDuckGo fallback",
-            ),
-          );
-          console.log(
-            styleText("gray", "  For better results, configure a provider:"),
-          );
-          console.log();
-          console.log(
-            styleText("yellow", "  Smithery Exa"),
-            styleText("gray", " - Best quality, free via smithery.ai"),
-          );
-          console.log(
-            styleText(
-              "gray",
-              "    export SMITHERY_API_KEY=... SMITHERY_PROFILE=...",
-            ),
-          );
-          console.log(
-            styleText("yellow", "  Google PSE"),
-            styleText("gray", " - 10,000/day free"),
-          );
-          console.log(
-            styleText(
-              "gray",
-              "    export GOOGLE_PSE_API_KEY=... GOOGLE_PSE_CX=...",
-            ),
-          );
-          console.log();
-          console.log(
-            styleText(
-              "gray",
-              "  See README for all providers and setup guides",
-            ),
+            styleText("white", `  Forward target: ${websearchTarget}`),
           );
         } else {
           await createAlias(result.outputPath, alias, verbose);
@@ -513,7 +478,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           isCustom: !!isCustom,
           skipLogin: !!skipLogin,
           apiBase: apiBase || null,
-          websearch: !!webSearch,
+          websearch: !!websearch,
           reasoningEffort: !!reasoningEffort,
         });
         await saveAliasMetadata(metadata);
@@ -560,158 +525,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .command("version", "Print droid-patch version")
   .action(() => {
     console.log(`droid-patch v${version}`);
-  })
-  .command("proxy-status", "Check websearch proxy status")
-  .action(async () => {
-    const pidFile = "/tmp/droid-search-proxy.pid";
-    const logFile = "/tmp/droid-search-proxy.log";
-    const port = 23119;
-
-    console.log(styleText("cyan", "═".repeat(60)));
-    console.log(styleText(["cyan", "bold"], "  WebSearch Proxy Status"));
-    console.log(styleText("cyan", "═".repeat(60)));
-    console.log();
-
-    // Check if proxy is running
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/health`);
-      if (response.ok) {
-        const data = (await response.json()) as {
-          status: string;
-          port: number;
-          idleTimeout?: number;
-          idleSeconds?: number;
-          droidRunning?: boolean;
-          willShutdownIn?: number | null;
-        };
-        console.log(styleText("green", `  Status: Running ✓`));
-        console.log(styleText("white", `  Port: ${port}`));
-
-        if (existsSync(pidFile)) {
-          const { readFileSync } = await import("node:fs");
-          const pid = readFileSync(pidFile, "utf-8").trim();
-          console.log(styleText("white", `  PID: ${pid}`));
-        }
-
-        // Show droid running status
-        if (data.droidRunning !== undefined) {
-          console.log(
-            styleText(
-              "white",
-              `  Droid running: ${data.droidRunning ? "yes (proxy will stay alive)" : "no"}`,
-            ),
-          );
-        }
-
-        // Show idle timeout info
-        if (data.idleTimeout !== undefined) {
-          if (data.idleTimeout > 0) {
-            const idleMins = Math.floor((data.idleSeconds || 0) / 60);
-            const idleSecs = (data.idleSeconds || 0) % 60;
-            if (data.droidRunning) {
-              console.log(
-                styleText(
-                  "white",
-                  `  Idle: ${idleMins}m ${idleSecs}s (won't shutdown while droid runs)`,
-                ),
-              );
-            } else if (data.willShutdownIn !== null) {
-              const shutdownMins = Math.floor((data.willShutdownIn || 0) / 60);
-              const shutdownSecs = (data.willShutdownIn || 0) % 60;
-              console.log(
-                styleText("white", `  Idle: ${idleMins}m ${idleSecs}s`),
-              );
-              console.log(
-                styleText(
-                  "white",
-                  `  Auto-shutdown in: ${shutdownMins}m ${shutdownSecs}s`,
-                ),
-              );
-            }
-          } else {
-            console.log(styleText("white", `  Auto-shutdown: disabled`));
-          }
-        }
-
-        console.log(styleText("white", `  Log: ${logFile}`));
-        console.log();
-        console.log(styleText("gray", "To stop the proxy manually:"));
-        console.log(styleText("cyan", "  npx droid-patch proxy-stop"));
-        console.log();
-        console.log(styleText("gray", "To disable auto-shutdown:"));
-        console.log(styleText("cyan", "  export DROID_PROXY_IDLE_TIMEOUT=0"));
-      }
-    } catch {
-      console.log(styleText("yellow", `  Status: Not running`));
-      console.log();
-      console.log(
-        styleText(
-          "gray",
-          "The proxy will start automatically when you run droid-full.",
-        ),
-      );
-      console.log(
-        styleText(
-          "gray",
-          "It will auto-shutdown after 5 minutes of idle (configurable).",
-        ),
-      );
-    }
-    console.log();
-  })
-  .command("proxy-stop", "Stop the websearch proxy")
-  .action(async () => {
-    const pidFile = "/tmp/droid-search-proxy.pid";
-
-    if (!existsSync(pidFile)) {
-      console.log(styleText("yellow", "Proxy is not running (no PID file)"));
-      return;
-    }
-
-    try {
-      const { readFileSync, unlinkSync } = await import("node:fs");
-      const pid = readFileSync(pidFile, "utf-8").trim();
-
-      process.kill(parseInt(pid), "SIGTERM");
-      unlinkSync(pidFile);
-
-      console.log(styleText("green", `[*] Proxy stopped (PID: ${pid})`));
-    } catch (error) {
-      console.log(
-        styleText(
-          "yellow",
-          `[!] Could not stop proxy: ${(error as Error).message}`,
-        ),
-      );
-
-      // Clean up stale PID file
-      try {
-        const { unlinkSync } = await import("node:fs");
-        unlinkSync(pidFile);
-        console.log(styleText("gray", "Cleaned up stale PID file"));
-      } catch {}
-    }
-  })
-  .command("proxy-log", "Show websearch proxy logs")
-  .action(async () => {
-    const logFile = "/tmp/droid-search-proxy.log";
-
-    if (!existsSync(logFile)) {
-      console.log(styleText("yellow", "No log file found"));
-      return;
-    }
-
-    const { readFileSync } = await import("node:fs");
-    const log = readFileSync(logFile, "utf-8");
-    const lines = log.split("\n").slice(-50); // Last 50 lines
-
-    console.log(styleText("cyan", "═".repeat(60)));
-    console.log(
-      styleText(["cyan", "bold"], "  WebSearch Proxy Logs (last 50 lines)"),
-    );
-    console.log(styleText("cyan", "═".repeat(60)));
-    console.log();
-    console.log(lines.join("\n"));
   })
   .command("update", "Update aliases with latest droid binary")
   .argument(
@@ -927,17 +740,31 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         // If websearch is enabled, regenerate wrapper files
-        if (meta.patches.websearch) {
-          const websearchDir = join(homedir(), ".droid-patch", "websearch");
+        // Support both new 'websearch' field and old 'proxy' field for backward compatibility
+        const hasWebsearch = meta.patches.websearch || !!meta.patches.proxy;
+        if (hasWebsearch) {
+          // Determine forward target: apiBase > proxy (legacy) > default
+          const forwardTarget =
+            meta.patches.apiBase ||
+            meta.patches.proxy ||
+            "https://api.factory.ai";
+          const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const targetBinaryPath =
             patches.length > 0 ? outputPath : newBinaryPath;
           await createWebSearchUnifiedFiles(
-            websearchDir,
+            proxyDir,
             targetBinaryPath,
             meta.name,
+            forwardTarget,
           );
           if (verbose) {
             console.log(styleText("gray", `  Regenerated websearch wrapper`));
+          }
+          // Migrate old proxy field to new websearch field
+          if (meta.patches.proxy && !meta.patches.websearch) {
+            meta.patches.websearch = true;
+            meta.patches.apiBase = meta.patches.proxy;
+            delete meta.patches.proxy;
           }
         }
 

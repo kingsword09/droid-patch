@@ -27,8 +27,12 @@ export interface AliasMetadata {
   patches: {
     isCustom: boolean;
     skipLogin: boolean;
+    /** API base URL for binary patching or websearch forward target */
     apiBase: string | null;
+    /** Whether websearch is enabled */
     websearch: boolean;
+    /** @deprecated Old proxy field, kept for backward compatibility */
+    proxy?: string | null;
     reasoningEffort: boolean;
   };
 }
@@ -143,8 +147,17 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   const applied: string[] = [];
   if (patches.isCustom) applied.push("isCustom");
   if (patches.skipLogin) applied.push("skipLogin");
-  if (patches.apiBase) applied.push(`apiBase(${patches.apiBase})`);
-  if (patches.websearch) applied.push("websearch");
+  // Show apiBase only when not using websearch (binary patch mode)
+  if (patches.apiBase && !patches.websearch)
+    applied.push(`apiBase(${patches.apiBase})`);
+  // Show websearch with optional custom target
+  if (patches.websearch) {
+    const target = patches.apiBase || "api.factory.ai";
+    applied.push(`websearch(${target})`);
+  }
+  // Support old proxy field for backward compatibility
+  if (patches.proxy && !patches.websearch)
+    applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }
