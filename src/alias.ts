@@ -944,6 +944,188 @@ export async function restoreOriginal(originalPath: string): Promise<void> {
 }
 
 /**
+ * Filter options for removing aliases
+ * Uses the same names as CLI options for consistency
+ */
+export type FilterFlag =
+  | "is-custom"
+  | "skip-login"
+  | "websearch"
+  | "api-base"
+  | "reasoning-effort";
+
+export interface RemoveFilterOptions {
+  /** Remove aliases created by this droid-patch version */
+  patchVersion?: string;
+  /** Remove aliases for this droid version */
+  droidVersion?: string;
+  /** Remove aliases that have these flags enabled (all must match) */
+  flags?: FilterFlag[];
+}
+
+/**
+ * Remove aliases matching filter criteria
+ */
+export async function removeAliasesByFilter(
+  filter: RemoveFilterOptions,
+): Promise<void> {
+  console.log(styleText("cyan", "═".repeat(60)));
+  console.log(styleText(["cyan", "bold"], "  Remove Aliases by Filter"));
+  console.log(styleText("cyan", "═".repeat(60)));
+  console.log();
+
+  // Show filter criteria
+  if (filter.patchVersion) {
+    console.log(
+      styleText(
+        "white",
+        `  Filter: droid-patch version = ${filter.patchVersion}`,
+      ),
+    );
+  }
+  if (filter.droidVersion) {
+    console.log(
+      styleText("white", `  Filter: droid version = ${filter.droidVersion}`),
+    );
+  }
+  if (filter.flags && filter.flags.length > 0) {
+    console.log(
+      styleText("white", `  Filter: flags = ${filter.flags.join(", ")}`),
+    );
+  }
+  console.log();
+
+  // Collect all alias names
+  const aliasNames = new Set<string>();
+
+  // Check common PATH directories for symlinks
+  for (const pathDir of COMMON_PATH_DIRS) {
+    if (!existsSync(pathDir)) continue;
+
+    try {
+      const files = readdirSync(pathDir);
+      for (const file of files) {
+        const fullPath = join(pathDir, file);
+        try {
+          const stats = lstatSync(fullPath);
+          if (stats.isSymbolicLink()) {
+            const target = await readlink(fullPath);
+            if (
+              target.includes(".droid-patch/bins") ||
+              target.includes(".droid-patch/websearch") ||
+              target.includes(".droid-patch/proxy")
+            ) {
+              aliasNames.add(file);
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    } catch {
+      // Directory can't be read
+    }
+  }
+
+  // Check aliases directory
+  if (existsSync(ALIASES_DIR)) {
+    try {
+      const files = readdirSync(ALIASES_DIR);
+      for (const file of files) {
+        const fullPath = join(ALIASES_DIR, file);
+        try {
+          const stats = lstatSync(fullPath);
+          if (stats.isSymbolicLink()) {
+            aliasNames.add(file);
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    } catch {
+      // Directory can't be read
+    }
+  }
+
+  // Filter aliases by metadata
+  const matchingAliases: string[] = [];
+
+  for (const aliasName of aliasNames) {
+    const meta = await loadAliasMetadata(aliasName);
+
+    // If no metadata, skip (can't filter without metadata)
+    if (!meta) {
+      continue;
+    }
+
+    let matches = true;
+
+    // Check droid-patch version
+    if (filter.patchVersion && meta.droidPatchVersion !== filter.patchVersion) {
+      matches = false;
+    }
+
+    // Check droid version
+    if (filter.droidVersion && meta.droidVersion !== filter.droidVersion) {
+      matches = false;
+    }
+
+    // Check flags (all specified flags must match)
+    if (filter.flags && filter.flags.length > 0) {
+      const patches = meta.patches;
+      for (const flag of filter.flags) {
+        switch (flag) {
+          case "is-custom":
+            if (!patches.isCustom) matches = false;
+            break;
+          case "skip-login":
+            if (!patches.skipLogin) matches = false;
+            break;
+          case "websearch":
+            if (!patches.websearch) matches = false;
+            break;
+          case "reasoning-effort":
+            if (!patches.reasoningEffort) matches = false;
+            break;
+          case "api-base":
+            if (!patches.apiBase) matches = false;
+            break;
+        }
+        if (!matches) break;
+      }
+    }
+
+    if (matches) {
+      matchingAliases.push(aliasName);
+    }
+  }
+
+  if (matchingAliases.length === 0) {
+    console.log(styleText("yellow", "  No aliases match the filter criteria."));
+    console.log();
+    return;
+  }
+
+  console.log(
+    styleText("white", `  Found ${matchingAliases.length} matching alias(es):`),
+  );
+  for (const name of matchingAliases) {
+    console.log(styleText("gray", `    • ${name}`));
+  }
+  console.log();
+
+  // Remove each matching alias
+  for (const aliasName of matchingAliases) {
+    await removeAlias(aliasName);
+    console.log();
+  }
+
+  console.log(
+    styleText("green", `[*] Removed ${matchingAliases.length} alias(es)`),
+  );
+}
+
+/**
  * Clear all droid-patch aliases and related files
  */
 export async function clearAllAliases(): Promise<void> {
