@@ -57,20 +57,20 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### Available Options
 
-| Option                | Description                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------ |
-| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models) |
-| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                   |
-| `--api-base <url>`    | Replace Factory API URL with a custom server (max 22 chars)                          |
-| `--websearch`         | Inject local WebSearch proxy with multiple search providers                          |
-| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                  |
-| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                  |
-| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                         |
-| `--dry-run`           | Verify patches without actually modifying the binary                                 |
-| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                             |
-| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                     |
-| `--no-backup`         | Skip creating backup of original binary                                              |
-| `-v, --verbose`       | Enable verbose output                                                                |
+| Option                | Description                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                         |
+| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
+| `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
+| `--websearch`         | Inject local WebSearch proxy with multiple search providers                                                  |
+| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                                          |
+| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
+| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
+| `--dry-run`           | Verify patches without actually modifying the binary                                                         |
+| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |
+| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                             |
+| `--no-backup`         | Skip creating backup of original binary                                                                      |
+| `-v, --verbose`       | Enable verbose output                                                                                        |
 
 ### Manage Aliases and Files
 
@@ -164,13 +164,14 @@ Replaces all `process.env.FACTORY_API_KEY` references in the binary with a hardc
 
 ### `--api-base <url>`
 
-Replaces the Factory API base URL (`https://api.factory.ai`) with a custom URL.
+Replace the Factory API base URL. Has different behavior depending on usage:
 
-**Purpose**: Redirect API requests to a custom server (e.g., local proxy).
+**1. Standalone (without `--websearch`)**
 
-**Limitation**: URL must be 22 characters or less (same length as original URL).
+Binary patch to replace `https://api.factory.ai` with your custom URL.
 
-**Examples**:
+- **Limitation**: URL must be 22 characters or less (same length as original URL)
+- **Use case**: Direct API URL replacement without proxy
 
 ```bash
 # Valid URLs (<=22 chars)
@@ -179,6 +180,19 @@ npx droid-patch --api-base "http://localhost:80" droid-local
 
 # Invalid (too long)
 npx droid-patch --api-base "http://my-long-domain.com:3000" droid  # Error!
+```
+
+**2. With `--websearch`**
+
+Sets the forward target URL for the WebSearch proxy by configuring the `FACTORY_API` variable in the proxy script.
+
+- **No length limitation**: Any valid URL can be used
+- **Use case**: Forward non-search requests to your custom LLM backend
+
+```bash
+# Forward to custom backend (no length limit)
+npx droid-patch --websearch --api-base "http://127.0.0.1:20002" droid-custom
+npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-custom
 ```
 
 ### `--websearch`

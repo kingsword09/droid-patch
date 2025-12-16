@@ -103,7 +103,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   )
   .option(
     "--api-base <url>",
-    "Replace Factory API URL with custom URL (binary patch, or forward target with --websearch)",
+    "Replace API URL (standalone: binary patch, max 22 chars; with --websearch: proxy forward target, no limit)",
   )
   .option(
     "--websearch",
@@ -233,7 +233,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         styleText("gray", "  --skip-login        Bypass login by injecting a fake API key"),
       );
       console.log(
-        styleText("gray", "  --api-base          Replace Factory API URL (binary patch)"),
+        styleText(
+          "gray",
+          "  --api-base          Replace API URL (standalone: max 22 chars; with --websearch: no limit)",
+        ),
       );
       console.log(styleText("gray", "  --websearch         Enable local WebSearch proxy"));
       console.log(

@@ -57,20 +57,20 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### 可用选项
 
-| 选项                  | 说明                                                                |
-| --------------------- | ------------------------------------------------------------------- |
-| `--is-custom`         | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩） |
-| `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                         |
-| `--api-base <url>`    | 将 Factory API URL 替换为自定义服务器（最多 22 个字符）             |
-| `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                         |
-| `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）   |
-| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                   |
-| `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                  |
-| `--dry-run`           | 验证修补但不实际修改二进制文件                                      |
-| `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                  |
-| `-o, --output <dir>`  | 修补后二进制文件的输出目录（直接创建文件，不创建别名）              |
-| `--no-backup`         | 跳过创建原始二进制文件的备份                                        |
-| `-v, --verbose`       | 启用详细输出                                                        |
+| 选项                  | 说明                                                                                            |
+| --------------------- | ----------------------------------------------------------------------------------------------- |
+| `--is-custom`         | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩）                             |
+| `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                                                     |
+| `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
+| `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                                                     |
+| `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）                               |
+| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
+| `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
+| `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
+| `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                                              |
+| `-o, --output <dir>`  | 修补后二进制文件的输出目录（直接创建文件，不创建别名）                                          |
+| `--no-backup`         | 跳过创建原始二进制文件的备份                                                                    |
+| `-v, --verbose`       | 启用详细输出                                                                                    |
 
 ### 管理别名和文件
 
@@ -164,13 +164,14 @@ export PATH="$HOME/.droid-patch/aliases:$PATH"
 
 ### `--api-base <url>`
 
-将 Factory API 基础 URL（`https://api.factory.ai`）替换为自定义 URL。
+替换 Factory API 基础 URL。根据使用方式有不同的行为：
 
-**用途**：将 API 请求重定向到自定义服务器（如本地代理）。
+**1. 单独使用（不与 `--websearch` 配合）**
 
-**限制**：URL 必须不超过 22 个字符（与原始 URL 长度相同）。
+通过二进制补丁将 `https://api.factory.ai` 替换为你的自定义 URL。
 
-**示例**：
+- **限制**：URL 必须不超过 22 个字符（与原始 URL 长度相同）
+- **用途**：直接替换 API URL，不使用代理
 
 ```bash
 # 有效的 URL（<=22 个字符）
@@ -179,6 +180,19 @@ npx droid-patch --api-base "http://localhost:80" droid-local
 
 # 无效（太长）
 npx droid-patch --api-base "http://my-long-domain.com:3000" droid  # 错误！
+```
+
+**2. 与 `--websearch` 配合使用**
+
+通过配置代理脚本中的 `FACTORY_API` 变量来设置 WebSearch 代理的转发目标 URL。
+
+- **无长度限制**：可以使用任何有效的 URL
+- **用途**：将非搜索请求转发到你的自定义 LLM 后端
+
+```bash
+# 转发到自定义后端（无长度限制）
+npx droid-patch --websearch --api-base "http://127.0.0.1:20002" droid-custom
+npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-custom
 ```
 
 ### `--websearch`
