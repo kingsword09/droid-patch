@@ -32,6 +32,12 @@ npx droid-patch --websearch --standalone droid-local
 # 使用 --reasoning-effort 为自定义模型启用推理功能
 npx droid-patch --reasoning-effort droid-reasoning
 
+# 使用 --statusline 启用 Claude 风格的终端状态栏
+npx droid-patch --statusline droid-status
+
+# 组合 --websearch 和 --statusline
+npx droid-patch --websearch --statusline droid-full-ui
+
 # 组合多个修补选项
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
@@ -63,6 +69,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                                                     |
 | `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
 | `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                                                     |
+| `--statusline`        | 启用 Claude 风格的终端状态栏（显示模型、上下文、git 信息）                                      |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）                               |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
@@ -317,6 +324,49 @@ npx droid-patch --disable-telemetry droid-private
 # 与其他补丁组合
 npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
 ```
+
+### `--statusline`
+
+在终端底部启用 Claude 风格的状态栏，实时显示会话信息。
+
+**用途**：在不干扰主 UI 的情况下，一目了然地查看模型、上下文使用量、git 状态和 token 用量。
+
+**特性**：
+
+- **实时上下文追踪**：显示当前 token 使用量（缓存读取 + 新输入）
+- **模型信息**：显示当前激活的模型和提供商
+- **用量汇总**：显示会话累计（In/Out/Cre/Read/Think）并附带最近一次回复的 `LastOut`
+- **Git 集成**：显示当前分支和差异摘要（+插入行数，-删除行数）
+- **压缩指示器**：显示上下文压缩正在进行中
+- **PTY 代理架构**：为状态栏预留底部行，避免闪烁
+
+**工作原理**：
+
+1. Python PTY 包装器拦截终端 I/O 并预留底部行
+2. Node.js 监控脚本跟踪 Factory 日志文件（`~/.factory/logs/droid-log-single.log`）
+3. 监控器解析流式 token 使用并输出状态栏帧
+4. 包装器在预留行上渲染最新帧
+
+**使用方法**：
+
+```bash
+# 仅启用状态栏
+npx droid-patch --statusline droid-status
+
+# 与 websearch 组合
+npx droid-patch --websearch --statusline droid-full-ui
+
+# 与所有功能组合
+npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
+```
+
+**状态栏显示示例**：
+
+```
+ Model: claude-sonnet-4-20250514  Prov: anthropic  Ctx: 12345 (c8000+n4345)  In:33 Out:1273 Cre:33.9k Read:25.9k Think:212 LastOut:130  ⎇ main (+10,-5)  cwd: my-project
+```
+
+**注意**：状态栏需要 Python 3 来运行 PTY 包装器。在现代终端模拟器（iTerm2、Alacritty、Kitty 等）中效果最佳。支持 Apple Terminal，但使用较长的渲染间隔以减少闪烁。
 
 ---
 
@@ -612,8 +662,17 @@ npx droid-patch --websearch --standalone droid-local
 # 隐私模式：禁用遥测
 npx droid-patch --disable-telemetry droid-private
 
+# 状态栏模式：Claude 风格的终端状态栏
+npx droid-patch --statusline droid-status
+
+# Websearch + 状态栏：完整 UI 体验
+npx droid-patch --websearch --statusline droid-full-ui
+
 # 完全本地化：所有功能组合
 npx droid-patch --is-custom --skip-login --websearch --standalone --disable-telemetry droid-full-local
+
+# 终极设置：包含状态栏的所有功能
+npx droid-patch --is-custom --skip-login --websearch --standalone --statusline --disable-telemetry droid-ultimate
 
 # websearch + 自定义后端
 npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
@@ -628,6 +687,7 @@ npx droid-patch list
 # 清理
 npx droid-patch remove droid-search              # 删除单个别名
 npx droid-patch remove --flag=websearch          # 删除所有 websearch 别名
+npx droid-patch remove --flag=statusline         # 删除所有 statusline 别名
 npx droid-patch remove --flag=standalone         # 删除所有 standalone 别名
 npx droid-patch remove --patch-version=0.4.0     # 按 droid-patch 版本删除
 npx droid-patch clear                            # 删除所有

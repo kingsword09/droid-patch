@@ -35,6 +35,8 @@ export interface AliasMetadata {
     apiBase: string | null;
     /** Whether websearch is enabled */
     websearch: boolean;
+    /** Whether statusline wrapper is enabled */
+    statusline?: boolean;
     /** @deprecated Old proxy field, kept for backward compatibility */
     proxy?: string | null;
     reasoningEffort: boolean;
@@ -171,5 +173,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   if (patches.noTelemetry) applied.push("noTelemetry");
   if (patches.standalone) applied.push("standalone");
+  if (patches.statusline) applied.push("statusline");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }

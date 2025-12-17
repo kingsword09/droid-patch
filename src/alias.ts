@@ -334,7 +334,8 @@ export async function removeAlias(aliasName: string): Promise<void> {
           if (
             target.includes(".droid-patch/bins") ||
             target.includes(".droid-patch/websearch") ||
-            target.includes(".droid-patch/proxy")
+            target.includes(".droid-patch/proxy") ||
+            target.includes(".droid-patch/statusline")
           ) {
             await unlink(pathSymlink);
             console.log(styleText("green", `    Removed: ${pathSymlink}`));
@@ -404,6 +405,23 @@ export async function removeAlias(aliasName: string): Promise<void> {
     removed = true;
   }
 
+  // Remove statusline wrapper and monitor script if exist
+  const statuslineDir = join(DROID_PATCH_DIR, "statusline");
+  const statuslineWrapperPath = join(statuslineDir, aliasName);
+  const statuslineMonitorPath = join(statuslineDir, `${aliasName}-statusline.js`);
+
+  if (existsSync(statuslineWrapperPath)) {
+    await unlink(statuslineWrapperPath);
+    console.log(styleText("green", `    Removed statusline wrapper: ${statuslineWrapperPath}`));
+    removed = true;
+  }
+
+  if (existsSync(statuslineMonitorPath)) {
+    await unlink(statuslineMonitorPath);
+    console.log(styleText("green", `    Removed statusline monitor: ${statuslineMonitorPath}`));
+    removed = true;
+  }
+
   // Remove metadata
   const metaRemoved = await removeAliasMetadata(aliasName);
   if (metaRemoved) {
@@ -450,7 +468,8 @@ export async function listAliases(): Promise<void> {
             if (
               target.includes(".droid-patch/bins") ||
               target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy")
+              target.includes(".droid-patch/proxy") ||
+              target.includes(".droid-patch/statusline")
             ) {
               aliases.push({
                 name: file,
@@ -828,6 +847,7 @@ export type FilterFlag =
   | "is-custom"
   | "skip-login"
   | "websearch"
+  | "statusline"
   | "api-base"
   | "reasoning-effort"
   | "disable-telemetry"
@@ -881,7 +901,8 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             if (
               target.includes(".droid-patch/bins") ||
               target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy")
+              target.includes(".droid-patch/proxy") ||
+              target.includes(".droid-patch/statusline")
             ) {
               aliasNames.add(file);
             }
@@ -951,6 +972,9 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             break;
           case "websearch":
             if (!patches.websearch) matches = false;
+            break;
+          case "statusline":
+            if (!patches.statusline) matches = false;
             break;
           case "reasoning-effort":
             if (!patches.reasoningEffort) matches = false;
@@ -1022,7 +1046,8 @@ export async function clearAllAliases(): Promise<void> {
             if (
               target.includes(".droid-patch/bins") ||
               target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy")
+              target.includes(".droid-patch/proxy") ||
+              target.includes(".droid-patch/statusline")
             ) {
               aliasNames.add(file);
             }
@@ -1079,6 +1104,7 @@ export async function clearAllAliases(): Promise<void> {
     join(DROID_PATCH_DIR, "aliases"),
     join(DROID_PATCH_DIR, "proxy"),
     join(DROID_PATCH_DIR, "websearch"),
+    join(DROID_PATCH_DIR, "statusline"),
   ];
 
   for (const dir of dirsToClean) {

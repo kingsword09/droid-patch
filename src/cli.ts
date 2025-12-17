@@ -16,6 +16,7 @@ import {
   type FilterFlag,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
+import { createStatuslineFiles } from "./statusline-patch.ts";
 import {
   saveAliasMetadata,
   createMetadata,
@@ -109,6 +110,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--websearch",
     "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
   )
+  .option("--statusline", "Enable a Claude-style statusline (terminal UI)")
   .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
     "--reasoning-effort",
@@ -130,6 +132,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
+    const statusline = options["statusline"] as boolean;
     const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
@@ -145,37 +148,59 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // If -o is specified with alias, output to that directory with alias name
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
-    // Handle --websearch only (no binary patching needed)
-    // When --websearch is used alone (with optional --standalone), create proxy wrapper without modifying binary
-    if (websearch && !isCustom && !skipLogin && !reasoningEffort && !noTelemetry) {
+    const needsBinaryPatch =
+      !!isCustom || !!skipLogin || !!reasoningEffort || !!noTelemetry || (!!apiBase && !websearch);
+
+    // Wrapper-only mode (no binary patching needed):
+    // - --websearch (optional --standalone)
+    // - --statusline
+    // - both combined (statusline wraps websearch)
+    if (!needsBinaryPatch && (websearch || statusline)) {
       if (!alias) {
-        console.log(styleText("red", "Error: Alias name required for --websearch"));
+        console.log(styleText("red", "Error: Alias name required for --websearch/--statusline"));
         console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
+        console.log(styleText("gray", "Usage: npx droid-patch --statusline <alias>"));
         process.exit(1);
       }
 
       console.log(styleText("cyan", "═".repeat(60)));
-      console.log(styleText(["cyan", "bold"], "  Droid WebSearch Setup"));
+      console.log(styleText(["cyan", "bold"], "  Droid Wrapper Setup"));
       console.log(styleText("cyan", "═".repeat(60)));
       console.log();
-      console.log(styleText("white", `Forward target: ${websearchTarget}`));
-      if (standalone) {
-        console.log(styleText("white", `Standalone mode: enabled`));
+      if (websearch) {
+        console.log(styleText("white", `WebSearch: enabled`));
+        console.log(styleText("white", `Forward target: ${websearchTarget}`));
+        if (standalone) {
+          console.log(styleText("white", `Standalone mode: enabled`));
+        }
+      }
+      if (statusline) {
+        console.log(styleText("white", `Statusline: enabled`));
       }
       console.log();
 
-      // Create websearch proxy files (proxy script + wrapper)
-      const proxyDir = join(homedir(), ".droid-patch", "proxy");
-      const { wrapperScript } = await createWebSearchUnifiedFiles(
-        proxyDir,
-        path,
-        alias,
-        websearchTarget,
-        standalone,
-      );
+      let execTargetPath = path;
+      if (websearch) {
+        // Create websearch proxy files (proxy script + wrapper)
+        const proxyDir = join(homedir(), ".droid-patch", "proxy");
+        const { wrapperScript } = await createWebSearchUnifiedFiles(
+          proxyDir,
+          execTargetPath,
+          alias,
+          websearchTarget,
+          standalone,
+        );
+        execTargetPath = wrapperScript;
+      }
 
-      // Create alias pointing to wrapper
-      await createAliasForWrapper(wrapperScript, alias, verbose);
+      if (statusline) {
+        const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+        const { wrapperScript } = await createStatuslineFiles(statuslineDir, execTargetPath, alias);
+        execTargetPath = wrapperScript;
+      }
+
+      // Create alias pointing to outer wrapper
+      await createAliasForWrapper(execTargetPath, alias, verbose);
 
       // Save metadata for update command
       const droidVersion = getDroidVersion(path);
@@ -186,7 +211,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           isCustom: false,
           skipLogin: false,
           apiBase: apiBase || null,
-          websearch: true,
+          websearch: !!websearch,
+          statusline: !!statusline,
           reasoningEffort: false,
           noTelemetry: false,
           standalone: standalone,
@@ -200,33 +226,43 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       console.log();
       console.log(styleText("green", "═".repeat(60)));
-      console.log(styleText(["green", "bold"], "  WebSearch Ready!"));
+      console.log(styleText(["green", "bold"], "  Wrapper Ready!"));
       console.log(styleText("green", "═".repeat(60)));
       console.log();
       console.log("Run directly:");
       console.log(styleText("yellow", `  ${alias}`));
       console.log();
-      console.log(styleText("cyan", "Auto-shutdown:"));
-      console.log(
-        styleText("gray", "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)"),
-      );
-      console.log(styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"));
-      console.log();
-      console.log("Search providers (in priority order):");
-      console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
-      console.log(styleText("gray", "     export SMITHERY_API_KEY=your_api_key"));
-      console.log(styleText("gray", "     export SMITHERY_PROFILE=your_profile"));
-      console.log(styleText("gray", "  2. Google PSE:"));
-      console.log(styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"));
-      console.log(styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"));
-      console.log(styleText("gray", "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
-      console.log();
-      console.log("Debug mode:");
-      console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1"));
+      if (websearch) {
+        console.log(styleText("cyan", "Auto-shutdown:"));
+        console.log(
+          styleText("gray", "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)"),
+        );
+        console.log(styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"));
+        console.log();
+        console.log("Search providers (in priority order):");
+        console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
+        console.log(styleText("gray", "     export SMITHERY_API_KEY=your_api_key"));
+        console.log(styleText("gray", "     export SMITHERY_PROFILE=your_profile"));
+        console.log(styleText("gray", "  2. Google PSE:"));
+        console.log(styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"));
+        console.log(styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"));
+        console.log(styleText("gray", "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
+        console.log();
+        console.log("Debug mode:");
+        console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1"));
+      }
       return;
     }
 
-    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort && !noTelemetry) {
+    if (
+      !isCustom &&
+      !skipLogin &&
+      !apiBase &&
+      !websearch &&
+      !statusline &&
+      !reasoningEffort &&
+      !noTelemetry
+    ) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
       console.log(
@@ -239,6 +275,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         ),
       );
       console.log(styleText("gray", "  --websearch         Enable local WebSearch proxy"));
+      console.log(styleText("gray", "  --statusline        Enable Claude-style statusline"));
       console.log(
         styleText("gray", "  --reasoning-effort  Set reasoning effort level for custom models"),
       );
@@ -255,6 +292,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("cyan", "  npx droid-patch --is-custom --skip-login droid-patched"));
       console.log(styleText("cyan", "  npx droid-patch --websearch droid-search"));
       console.log(styleText("cyan", "  npx droid-patch --websearch --standalone droid-local"));
+      console.log(styleText("cyan", "  npx droid-patch --statusline droid-status"));
+      console.log(styleText("cyan", "  npx droid-patch --websearch --statusline droid-search-ui"));
       console.log(styleText("cyan", "  npx droid-patch --disable-telemetry droid-private"));
       console.log(
         styleText(
@@ -460,17 +499,18 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       if (result.success && result.outputPath && alias) {
         console.log();
 
-        // If --websearch is also used, create wrapper and point to it
+        let execTargetPath = result.outputPath;
+
         if (websearch) {
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const { wrapperScript } = await createWebSearchUnifiedFiles(
             proxyDir,
-            result.outputPath,
+            execTargetPath,
             alias,
             websearchTarget,
             standalone,
           );
-          await createAliasForWrapper(wrapperScript, alias, verbose);
+          execTargetPath = wrapperScript;
 
           console.log();
           console.log(styleText("cyan", "WebSearch enabled"));
@@ -478,6 +518,22 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           if (standalone) {
             console.log(styleText("white", `  Standalone mode: enabled`));
           }
+        }
+
+        if (statusline) {
+          const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          const { wrapperScript } = await createStatuslineFiles(
+            statuslineDir,
+            execTargetPath,
+            alias,
+          );
+          execTargetPath = wrapperScript;
+          console.log();
+          console.log(styleText("cyan", "Statusline enabled"));
+        }
+
+        if (websearch || statusline) {
+          await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
           await createAlias(result.outputPath, alias, verbose);
         }
@@ -492,6 +548,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             skipLogin: !!skipLogin,
             apiBase: apiBase || null,
             websearch: !!websearch,
+            statusline: !!statusline,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
@@ -528,7 +585,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, statusline, api-base, reasoning-effort, disable-telemetry, standalone)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
@@ -773,6 +830,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           }
         }
 
+        let execTargetPath = patches.length > 0 ? outputPath : newBinaryPath;
+
         // If websearch is enabled, regenerate wrapper files
         // Support both new 'websearch' field and old 'proxy' field for backward compatibility
         const hasWebsearch = meta.patches.websearch || !!meta.patches.proxy;
@@ -781,14 +840,14 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           const forwardTarget =
             meta.patches.apiBase || meta.patches.proxy || "https://api.factory.ai";
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
-          const targetBinaryPath = patches.length > 0 ? outputPath : newBinaryPath;
-          await createWebSearchUnifiedFiles(
+          const { wrapperScript } = await createWebSearchUnifiedFiles(
             proxyDir,
-            targetBinaryPath,
+            execTargetPath,
             meta.name,
             forwardTarget,
             meta.patches.standalone || false,
           );
+          execTargetPath = wrapperScript;
           if (verbose) {
             console.log(styleText("gray", `  Regenerated websearch wrapper`));
             if (meta.patches.standalone) {
@@ -800,6 +859,19 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             meta.patches.websearch = true;
             meta.patches.apiBase = meta.patches.proxy;
             delete meta.patches.proxy;
+          }
+        }
+
+        if (meta.patches.statusline) {
+          const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          const { wrapperScript } = await createStatuslineFiles(
+            statuslineDir,
+            execTargetPath,
+            meta.name,
+          );
+          execTargetPath = wrapperScript;
+          if (verbose) {
+            console.log(styleText("gray", `  Regenerated statusline wrapper`));
           }
         }
 
