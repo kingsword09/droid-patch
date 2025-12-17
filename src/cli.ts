@@ -200,7 +200,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       }
 
       // Create alias pointing to outer wrapper
-      await createAliasForWrapper(execTargetPath, alias, verbose);
+      const aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
 
       // Save metadata for update command
       const droidVersion = getDroidVersion(path);
@@ -220,6 +220,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         {
           droidPatchVersion: version,
           droidVersion,
+          aliasPath: aliasResult.aliasPath,
         },
       );
       await saveAliasMetadata(metadata);
@@ -532,10 +533,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           console.log(styleText("cyan", "Statusline enabled"));
         }
 
+        let aliasResult;
         if (websearch || statusline) {
-          await createAliasForWrapper(execTargetPath, alias, verbose);
+          aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
-          await createAlias(result.outputPath, alias, verbose);
+          aliasResult = await createAlias(result.outputPath, alias, verbose);
         }
 
         // Save metadata for update command
@@ -556,6 +558,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           {
             droidPatchVersion: version,
             droidVersion,
+            aliasPath: aliasResult.aliasPath,
           },
         );
         await saveAliasMetadata(metadata);
@@ -728,7 +731,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           });
         }
 
-        if (meta.patches.apiBase) {
+        // Only apply apiBase binary patch when NOT using websearch
+        // When websearch is enabled, apiBase is used as forward target, not binary patch
+        if (meta.patches.apiBase && !meta.patches.websearch) {
           const originalUrl = "https://api.factory.ai";
           const paddedUrl = meta.patches.apiBase.padEnd(originalUrl.length, " ");
           patches.push({
@@ -875,9 +880,83 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           }
         }
 
+        // Update symlink - find existing or use stored aliasPath
+        const { symlink, unlink, readlink, lstat } = await import("node:fs/promises");
+        let aliasPath = meta.aliasPath;
+
+        // If aliasPath not stored (old version), try to find existing symlink
+        if (!aliasPath) {
+          const commonPathDirs = [
+            join(homedir(), ".local/bin"),
+            join(homedir(), "bin"),
+            join(homedir(), ".bin"),
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            join(homedir(), ".droid-patch", "aliases"),
+          ];
+
+          for (const dir of commonPathDirs) {
+            const possiblePath = join(dir, meta.name);
+            if (existsSync(possiblePath)) {
+              try {
+                const stats = await lstat(possiblePath);
+                if (stats.isSymbolicLink()) {
+                  const target = await readlink(possiblePath);
+                  if (
+                    target.includes(".droid-patch/bins") ||
+                    target.includes(".droid-patch/proxy") ||
+                    target.includes(".droid-patch/statusline")
+                  ) {
+                    aliasPath = possiblePath;
+                    if (verbose) {
+                      console.log(styleText("gray", `  Found existing symlink: ${aliasPath}`));
+                    }
+                    break;
+                  }
+                }
+              } catch {
+                // Ignore errors, continue searching
+              }
+            }
+          }
+        }
+
+        // Update symlink if we have a path
+        if (aliasPath) {
+          try {
+            if (existsSync(aliasPath)) {
+              const currentTarget = await readlink(aliasPath);
+              if (currentTarget !== execTargetPath) {
+                await unlink(aliasPath);
+                await symlink(execTargetPath, aliasPath);
+                if (verbose) {
+                  console.log(styleText("gray", `  Updated symlink: ${aliasPath}`));
+                }
+              }
+            } else {
+              // Symlink doesn't exist, recreate it
+              await symlink(execTargetPath, aliasPath);
+              if (verbose) {
+                console.log(styleText("gray", `  Recreated symlink: ${aliasPath}`));
+              }
+            }
+            // Store aliasPath in metadata for future updates
+            meta.aliasPath = aliasPath;
+          } catch (symlinkError) {
+            console.log(
+              styleText(
+                "yellow",
+                `  [!] Could not update symlink: ${(symlinkError as Error).message}`,
+              ),
+            );
+          }
+        }
+
         // Update metadata
         meta.updatedAt = new Date().toISOString();
         meta.originalBinaryPath = newBinaryPath;
+        meta.droidVersion = getDroidVersion(newBinaryPath);
+        meta.droidPatchVersion = version;
         await saveAliasMetadata(meta);
 
         console.log(styleText("green", `  ✓ Updated successfully`));
