@@ -38,6 +38,33 @@ function isPositiveInt(n) {
   return Number.isFinite(n) && n > 0;
 }
 
+function firstNonNull(promises) {
+  const list = Array.isArray(promises) ? promises : [];
+  if (list.length === 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let pending = list.length;
+    let done = false;
+    for (const p of list) {
+      Promise.resolve(p)
+        .then((value) => {
+          if (done) return;
+          if (value) {
+            done = true;
+            resolve(value);
+            return;
+          }
+          pending -= 1;
+          if (pending <= 0) resolve(null);
+        })
+        .catch(() => {
+          if (done) return;
+          pending -= 1;
+          if (pending <= 0) resolve(null);
+        });
+    }
+  });
+}
+
 function listPidsInProcessGroup(pgid) {
   if (!isPositiveInt(pgid)) return [];
   try {
@@ -90,10 +117,11 @@ function resolveOpenSessionFromPids(pids) {
   return null;
 }
 
-async function resolveSessionFromProcessGroup() {
+async function resolveSessionFromProcessGroup(shouldAbort, maxTries = 20) {
   if (!isPositiveInt(PGID)) return null;
   // Wait a little for droid to create/open the session files.
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < maxTries; i++) {
+    if (shouldAbort && shouldAbort()) return null;
     const pids = listPidsInProcessGroup(PGID);
     const found = resolveOpenSessionFromPids(pids);
     if (found) return found;
@@ -250,8 +278,9 @@ function pickLatestSessionAcross(workspaceDirs) {
   return best ? { workspaceDir: best.workspaceDir, id: best.id } : null;
 }
 
-async function waitForNewSessionAcross(workspaceDirs, knownIdsByWorkspace, startMs) {
+async function waitForNewSessionAcross(workspaceDirs, knownIdsByWorkspace, startMs, shouldAbort) {
   for (let i = 0; i < 80; i++) {
+    if (shouldAbort && shouldAbort()) return null;
     let best = null;
     for (const dir of workspaceDirs) {
       const known = knownIdsByWorkspace.get(dir) || new Set();
@@ -491,25 +520,30 @@ async function main() {
     sessionId = resumeId;
     workspaceDir = findWorkspaceDirForSessionId(workspaceDirs, sessionId) || workspaceDirs[0] || null;
   } else {
-    const byProc = await resolveSessionFromProcessGroup();
-    if (byProc?.id) {
-      sessionId = byProc.id;
-      workspaceDir = byProc.workspaceDir;
-    } else if (resumeFlag) {
-      const latest = pickLatestSessionAcross(workspaceDirs);
-      sessionId = latest?.id || null;
-      workspaceDir = latest?.workspaceDir || workspaceDirs[0] || null;
+    let abortResolve = false;
+    const shouldAbort = () => abortResolve;
+
+    const byProcPromise = resolveSessionFromProcessGroup(shouldAbort, 20);
+
+    let picked = null;
+    if (resumeFlag) {
+      // For --resume without an explicit id, don't block startup too long on ps/lsof.
+      // Prefer process-group resolution when it is fast; otherwise fall back to latest.
+      picked = await Promise.race([
+        byProcPromise,
+        sleep(400).then(() => null),
+      ]);
+      if (!picked) picked = pickLatestSessionAcross(workspaceDirs);
     } else {
-      const fresh = await waitForNewSessionAcross(workspaceDirs, knownIdsByWorkspace, START_MS);
-      if (fresh) {
-        sessionId = fresh.id;
-        workspaceDir = fresh.workspaceDir;
-      } else {
-        const latest = pickLatestSessionAcross(workspaceDirs);
-        sessionId = latest?.id || null;
-        workspaceDir = latest?.workspaceDir || workspaceDirs[0] || null;
-      }
+      const freshPromise = waitForNewSessionAcross(workspaceDirs, knownIdsByWorkspace, START_MS, shouldAbort);
+      picked = await firstNonNull([byProcPromise, freshPromise]);
+      if (!picked) picked = pickLatestSessionAcross(workspaceDirs);
     }
+
+    abortResolve = true;
+
+    sessionId = picked?.id || null;
+    workspaceDir = picked?.workspaceDir || workspaceDirs[0] || null;
   }
 
   if (!sessionId || !workspaceDir) return;
@@ -526,8 +560,8 @@ async function main() {
   let compacting = false;
   let lastRenderAt = 0;
   let lastRenderedLine = '';
-  const gitBranch = resolveGitBranch(cwd);
-  const gitDiff = resolveGitDiffSummary(cwd);
+  let gitBranch = '';
+  let gitDiff = '';
 
   function renderNow() {
     const usedTokens = (last.cacheReadInputTokens || 0) + (last.contextCount || 0);
@@ -550,78 +584,92 @@ async function main() {
     }
   }
 
-  // Seed prompt-context usage from existing logs (important for resumed sessions and early calls).
-  // This avoids showing "Ctx: 0" until the next streaming event arrives.
-  try {
-    // Backward scan to find the most recent streaming-context entry for this session.
-    // The log can be large and shared across multiple sessions, so a small tail slice
-    // may miss older resumed sessions.
-    const MAX_SCAN_BYTES = 64 * 1024 * 1024; // 64 MiB
-    const CHUNK_BYTES = 1024 * 1024; // 1 MiB
-
-    const fd = fs.openSync(LOG_PATH, 'r');
-    try {
-      const stat = fs.fstatSync(fd);
-      const size = Number(stat?.size ?? 0);
-      let pos = size;
-      let scanned = 0;
-      let remainder = '';
-      let seeded = false;
-
-      while (pos > 0 && scanned < MAX_SCAN_BYTES && !seeded) {
-        const readSize = Math.min(CHUNK_BYTES, pos);
-        const start = pos - readSize;
-        const buf = Buffer.alloc(readSize);
-        fs.readSync(fd, buf, 0, readSize, start);
-        pos = start;
-        scanned += readSize;
-
-        let text = buf.toString('utf8') + remainder;
-        let lines = String(text).split('\\n');
-        remainder = lines.shift() || '';
-        if (pos === 0 && remainder) {
-          lines.unshift(remainder);
-          remainder = '';
-        }
-
-        for (let i = lines.length - 1; i >= 0; i--) {
-          const line = String(lines[i] || '').trimEnd();
-          if (!line) continue;
-          if (!line.includes('Context:')) continue;
-          if (!line.includes('"sessionId":"' + sessionId + '"')) continue;
-          if (!line.includes('[Agent] Streaming result')) continue;
-          const ctxIndex = line.indexOf('Context: ');
-          if (ctxIndex === -1) continue;
-          const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
-          let ctx;
-          try {
-            ctx = JSON.parse(jsonStr);
-          } catch {
-            continue;
-          }
-          const cacheRead = Number(ctx?.cacheReadInputTokens ?? 0);
-          const contextCount = Number(ctx?.contextCount ?? 0);
-          const out = Number(ctx?.outputTokens ?? 0);
-          if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
-          if (Number.isFinite(contextCount)) last.contextCount = contextCount;
-          if (Number.isFinite(out)) last.outputTokens = out;
-          seeded = true;
-          break;
-        }
-
-        if (remainder.length > 8192) remainder = remainder.slice(-8192);
-      }
-    } finally {
-      try {
-        fs.closeSync(fd);
-      } catch {}
-    }
-  } catch {
-    // ignore
-  }
-
   // Initial render.
   renderNow();
+
+  // Resolve git info asynchronously so startup isn't blocked on large repos.
+  setTimeout(() => {
+    try {
+      gitBranch = resolveGitBranch(cwd);
+      gitDiff = resolveGitDiffSummary(cwd);
+      renderNow();
+    } catch {}
+  }, 0).unref();
+
+  // Seed prompt-context usage from existing logs (important for resumed sessions).
+  // Do this asynchronously to avoid delaying the first statusline frame.
+  if (resumeFlag || resumeId) {
+    setTimeout(() => {
+      try {
+        // Backward scan to find the most recent streaming-context entry for this session.
+        // The log can be large and shared across multiple sessions.
+        const MAX_SCAN_BYTES = 64 * 1024 * 1024; // 64 MiB
+        const CHUNK_BYTES = 1024 * 1024; // 1 MiB
+
+        const fd = fs.openSync(LOG_PATH, 'r');
+        try {
+          const stat = fs.fstatSync(fd);
+          const size = Number(stat?.size ?? 0);
+          let pos = size;
+          let scanned = 0;
+          let remainder = '';
+          let seeded = false;
+
+          while (pos > 0 && scanned < MAX_SCAN_BYTES && !seeded) {
+            const readSize = Math.min(CHUNK_BYTES, pos);
+            const start = pos - readSize;
+            const buf = Buffer.alloc(readSize);
+            fs.readSync(fd, buf, 0, readSize, start);
+            pos = start;
+            scanned += readSize;
+
+            let text = buf.toString('utf8') + remainder;
+            let lines = String(text).split('\\n');
+            remainder = lines.shift() || '';
+            if (pos === 0 && remainder) {
+              lines.unshift(remainder);
+              remainder = '';
+            }
+
+            for (let i = lines.length - 1; i >= 0; i--) {
+              const line = String(lines[i] || '').trimEnd();
+              if (!line) continue;
+              if (!line.includes('Context:')) continue;
+              if (!line.includes('"sessionId":"' + sessionId + '"')) continue;
+              if (!line.includes('[Agent] Streaming result')) continue;
+              const ctxIndex = line.indexOf('Context: ');
+              if (ctxIndex === -1) continue;
+              const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
+              let ctx;
+              try {
+                ctx = JSON.parse(jsonStr);
+              } catch {
+                continue;
+              }
+              const cacheRead = Number(ctx?.cacheReadInputTokens ?? 0);
+              const contextCount = Number(ctx?.contextCount ?? 0);
+              const out = Number(ctx?.outputTokens ?? 0);
+              if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
+              if (Number.isFinite(contextCount)) last.contextCount = contextCount;
+              if (Number.isFinite(out)) last.outputTokens = out;
+              seeded = true;
+              break;
+            }
+
+            if (remainder.length > 8192) remainder = remainder.slice(-8192);
+          }
+        } finally {
+          try {
+            fs.closeSync(fd);
+          } catch {}
+        }
+
+        renderNow();
+      } catch {
+        // ignore
+      }
+    }, 0).unref();
+  }
 
   // Watch session settings for autonomy/reasoning changes (cheap polling with mtime).
   let settingsMtimeMs = 0;
