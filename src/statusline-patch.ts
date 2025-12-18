@@ -744,8 +744,9 @@ EXEC_TARGET = ${execTargetJson}
 STATUSLINE_MONITOR = ${monitorScriptJson}
 
 IS_APPLE_TERMINAL = os.environ.get("TERM_PROGRAM") == "Apple_Terminal"
-MIN_RENDER_INTERVAL_MS = 1000 if IS_APPLE_TERMINAL else 500
-QUIET_MS = 120
+MIN_RENDER_INTERVAL_MS = 800 if IS_APPLE_TERMINAL else 400
+QUIET_MS = 50  # Reduced to prevent statusline disappearing
+FORCE_REPAINT_INTERVAL_MS = 2000  # Force repaint every 2 seconds
 RESERVED_ROWS = 1
 
 ANSI_RE = re.compile(r"\\x1b\\[[0-9;]*m")
@@ -998,7 +999,11 @@ class StatusRenderer:
         if len(lines) > reserved:
             lines = lines[-reserved:]
 
+        child_rows = rows - reserved
+
         parts = ["\\x1b[?2026h", "\\x1b[?25l"]
+        # Always set scroll region to exclude statusline area
+        parts.append(f"\\x1b[1;{child_rows}r")
         for i in range(reserved):
             row = start_row + i
             text = _clamp_ansi(lines[i], cols)
@@ -1455,6 +1460,7 @@ def main():
         last_physical_rows = 0
         last_physical_cols = 0
         scroll_region_dirty = True
+        last_force_repaint_ms = int(time.time() * 1000)
 
         while True:
             if child.poll() is not None:
@@ -1489,16 +1495,24 @@ def main():
                         data = b""
 
                     if data:
-                        detect_buf = (detect_buf + data)[-96:]
-                        if (
-                            (b"\\x1b[?1049" in detect_buf)
-                            or (b"\\x1b[?1047" in detect_buf)
-                            or (b"\\x1b[?47" in detect_buf)
-                            or (b"\\x1b[J" in detect_buf)
-                            or (b"\\x1b[0J" in detect_buf)
-                            or (b"\\x1b[1J" in detect_buf)
-                            or (b"\\x1b[2J" in detect_buf)
-                        ):
+                        detect_buf = (detect_buf + data)[-128:]
+                        # Detect sequences that may affect scroll region or clear screen
+                        needs_scroll_region_reset = (
+                            (b"\\x1b[?1049" in detect_buf)  # Alt screen
+                            or (b"\\x1b[?1047" in detect_buf)  # Alt screen
+                            or (b"\\x1b[?47" in detect_buf)  # Alt screen
+                            or (b"\\x1b[J" in detect_buf)  # Clear below
+                            or (b"\\x1b[0J" in detect_buf)  # Clear below
+                            or (b"\\x1b[1J" in detect_buf)  # Clear above
+                            or (b"\\x1b[2J" in detect_buf)  # Clear all
+                            or (b"\\x1b[3J" in detect_buf)  # Clear scrollback
+                            or (b"\\x1b[r" in detect_buf)  # Reset scroll region (bare ESC[r)
+                        )
+                        # Also detect scroll region changes with parameters (DECSTBM pattern ESC[n;mr)
+                        if b"\\x1b[" in detect_buf and b"r" in detect_buf:
+                            if re.search(b"\\x1b\\[\\d*;?\\d*r", detect_buf):
+                                needs_scroll_region_reset = True
+                        if needs_scroll_region_reset:
                             renderer.force_repaint(True)
                             scroll_region_dirty = True
                         h = detect_buf.rfind(b"\\x1b[?25h")
@@ -1568,7 +1582,7 @@ def main():
                     pass
 
                 scroll_region_dirty = True
-                renderer.force_repaint(True)
+                renderer.force_repaint(urgent=True)  # Use urgent mode to ensure immediate repaint
                 last_physical_rows = physical_rows
                 last_physical_cols = physical_cols
 
@@ -1592,6 +1606,12 @@ def main():
                 except Exception:
                     pass
                 scroll_region_dirty = False
+
+            # Periodic force repaint to ensure statusline doesn't disappear
+            now_ms = int(time.time() * 1000)
+            if now_ms - last_force_repaint_ms >= FORCE_REPAINT_INTERVAL_MS:
+                renderer.force_repaint(False)
+                last_force_repaint_ms = now_ms
 
             renderer.render(physical_rows, physical_cols, cr, cc)
 
