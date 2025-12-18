@@ -16,7 +16,7 @@ import {
   type FilterFlag,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
-import { createStatuslineFiles } from "./statusline-patch.ts";
+import { createStatuslineFiles, type StatuslineOptions } from "./statusline-patch.ts";
 import {
   saveAliasMetadata,
   createMetadata,
@@ -110,7 +110,14 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--websearch",
     "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
   )
-  .option("--statusline", "Enable a Claude-style statusline (terminal UI)")
+  .option(
+    "--statusline [source]",
+    "Enable statusline (terminal UI). Optional source: '88code' to show balances from proxy-config.json",
+  )
+  .option(
+    "--proxy-config <path>",
+    "Path to proxy-config.json for 88code balance display (use with --statusline 88code)",
+  )
   .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
     "--reasoning-effort",
@@ -132,7 +139,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
-    const statusline = options["statusline"] as boolean;
+    // --statusline can be boolean (true) or string ("88code")
+    const statuslineRaw = options["statusline"] as boolean | string | undefined;
+    const statusline = !!statuslineRaw;
+    const statuslineSource = typeof statuslineRaw === "string" ? statuslineRaw : undefined;
+    const proxyConfig = options["proxy-config"] as string | undefined;
     const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
@@ -195,7 +206,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       if (statusline) {
         const statuslineDir = join(homedir(), ".droid-patch", "statusline");
-        const { wrapperScript } = await createStatuslineFiles(statuslineDir, execTargetPath, alias);
+        const statuslineOpts: StatuslineOptions = {};
+        if (statuslineSource === "88code" && proxyConfig) {
+          statuslineOpts.proxyConfigPath = proxyConfig;
+        }
+        const { wrapperScript } = await createStatuslineFiles(
+          statuslineDir,
+          execTargetPath,
+          alias,
+          statuslineOpts,
+        );
         execTargetPath = wrapperScript;
       }
 
@@ -213,6 +233,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           apiBase: apiBase || null,
           websearch: !!websearch,
           statusline: !!statusline,
+          statuslineSource: statuslineSource || null,
+          statuslineProxyConfig: proxyConfig || null,
           reasoningEffort: false,
           noTelemetry: false,
           standalone: standalone,
@@ -523,14 +545,22 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (statusline) {
           const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          const statuslineOpts: StatuslineOptions = {};
+          if (statuslineSource === "88code" && proxyConfig) {
+            statuslineOpts.proxyConfigPath = proxyConfig;
+          }
           const { wrapperScript } = await createStatuslineFiles(
             statuslineDir,
             execTargetPath,
             alias,
+            statuslineOpts,
           );
           execTargetPath = wrapperScript;
           console.log();
           console.log(styleText("cyan", "Statusline enabled"));
+          if (statuslineSource === "88code") {
+            console.log(styleText("white", `  88code balance: enabled`));
+          }
         }
 
         let aliasResult;
@@ -551,6 +581,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             apiBase: apiBase || null,
             websearch: !!websearch,
             statusline: !!statusline,
+            statuslineSource: statuslineSource || null,
+            statuslineProxyConfig: proxyConfig || null,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
@@ -869,10 +901,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (meta.patches.statusline) {
           const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          const statuslineOpts: StatuslineOptions = {};
+          if (meta.patches.statuslineSource === "88code" && meta.patches.statuslineProxyConfig) {
+            statuslineOpts.proxyConfigPath = meta.patches.statuslineProxyConfig;
+          }
           const { wrapperScript } = await createStatuslineFiles(
             statuslineDir,
             execTargetPath,
             meta.name,
+            statuslineOpts,
           );
           execTargetPath = wrapperScript;
           if (verbose) {

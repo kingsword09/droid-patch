@@ -39,6 +39,10 @@ export interface AliasMetadata {
     websearch: boolean;
     /** Whether statusline wrapper is enabled */
     statusline?: boolean;
+    /** Statusline data source: "88code" for balance display */
+    statuslineSource?: string | null;
+    /** Path to proxy-config.json for 88code balance display */
+    statuslineProxyConfig?: string | null;
     /** @deprecated Old proxy field, kept for backward compatibility */
     proxy?: string | null;
     reasoningEffort: boolean;
