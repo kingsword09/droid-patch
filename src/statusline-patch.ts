@@ -749,6 +749,42 @@ QUIET_MS = 50  # Reduced to prevent statusline disappearing
 FORCE_REPAINT_INTERVAL_MS = 2000  # Force repaint every 2 seconds
 RESERVED_ROWS = 1
 
+BYPASS_FLAGS = {"--help", "-h", "--version", "-V"}
+BYPASS_COMMANDS = {"help", "version", "completion", "completions", "exec"}
+
+def _should_passthrough(argv):
+    # Any help/version flags before "--"
+    for a in argv:
+        if a == "--":
+            break
+        if a in BYPASS_FLAGS:
+            return True
+
+    # Top-level command token
+    end_opts = False
+    cmd = None
+    for a in argv:
+        if a == "--":
+            end_opts = True
+            continue
+        if (not end_opts) and a.startswith("-"):
+            continue
+        cmd = a
+        break
+
+    return cmd in BYPASS_COMMANDS
+
+def _exec_passthrough():
+    try:
+        os.execvp(EXEC_TARGET, [EXEC_TARGET] + sys.argv[1:])
+    except Exception as e:
+        sys.stderr.write(f"[statusline] passthrough failed: {e}\\n")
+        sys.exit(1)
+
+# Passthrough for non-interactive/meta commands (avoid clearing screen / PTY proxy)
+if (not sys.stdin.isatty()) or (not sys.stdout.isatty()) or _should_passthrough(sys.argv[1:]):
+    _exec_passthrough()
+
 ANSI_RE = re.compile(r"\\x1b\\[[0-9;]*m")
 RESET_SGR = "\\x1b[0m"
 
@@ -1360,9 +1396,6 @@ class CursorTracker:
 
 
 def main():
-    if not (sys.stdin.isatty() and sys.stdout.isatty()):
-        os.execv(EXEC_TARGET, [EXEC_TARGET] + sys.argv[1:])
-
     # Start from a clean viewport. Droid's TUI assumes a fresh screen; without this,
     # it can visually mix with prior shell output (especially when scrollback exists).
     try:
@@ -1510,7 +1543,7 @@ def main():
                         )
                         # Also detect scroll region changes with parameters (DECSTBM pattern ESC[n;mr)
                         if b"\\x1b[" in detect_buf and b"r" in detect_buf:
-                            if re.search(b"\\x1b\\[\\d*;?\\d*r", detect_buf):
+                            if re.search(b"\\x1b\\\\[[0-9]*;?[0-9]*r", detect_buf):
                                 needs_scroll_region_reset = True
                         if needs_scroll_region_reset:
                             renderer.force_repaint(True)

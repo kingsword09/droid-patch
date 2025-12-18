@@ -214,6 +214,7 @@ Enables WebSearch functionality through a local proxy server that intercepts `/a
 - **Per-instance proxy**: Each droid instance runs its own proxy on an auto-assigned port
 - **Auto-cleanup**: Proxy automatically stops when droid exits
 - **Forward target**: Use `--api-base` with `--websearch` to forward non-search requests to a custom backend
+- **Non-interactive passthrough**: `--version`/`version`, `--help`/`help`, `completion(s)`, `exec` do not start the proxy
 
 **Usage**:
 
@@ -339,6 +340,7 @@ Enables a Claude-style statusline at the bottom of the terminal, displaying real
 - **Git integration**: Shows current branch and diff summary (+insertions, -deletions)
 - **Compaction indicator**: Shows when context compaction is in progress
 - **PTY proxy architecture**: Reserves bottom row(s) for statusline without flickering
+- **Non-interactive passthrough**: `--version`/`version`, `--help`/`help`, `completion(s)`, `exec` (or non-TTY) bypass the statusline wrapper
 
 **How it works**:
 

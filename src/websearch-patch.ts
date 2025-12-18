@@ -1495,6 +1495,45 @@ PROXY_PID=""
 PORT_FILE="/tmp/droid-websearch-\$\$.port"
 STANDALONE="${standalone ? "1" : "0"}"
 
+# Passthrough for non-interactive/meta commands (avoid starting a proxy for help/version/etc)
+should_passthrough() {
+  # Any help/version flags before "--"
+  for arg in "\$@"; do
+    if [ "\$arg" = "--" ]; then
+      break
+    fi
+    case "\$arg" in
+      --help|-h|--version|-V)
+        return 0
+        ;;
+    esac
+  done
+
+  # Top-level command token
+  local end_opts=0
+  for arg in "\$@"; do
+    if [ "\$arg" = "--" ]; then
+      end_opts=1
+      continue
+    fi
+    if [ "\$end_opts" -eq 0 ] && [[ "\$arg" == -* ]]; then
+      continue
+    fi
+    case "\$arg" in
+      help|version|completion|completions|exec)
+        return 0
+        ;;
+    esac
+    break
+  done
+
+  return 1
+}
+
+if should_passthrough "\$@"; then
+  exec "\$DROID_BIN" "\$@"
+fi
+
 # Cleanup function - kill proxy when droid exits
 cleanup() {
   if [ -n "\$PROXY_PID" ] && kill -0 "\$PROXY_PID" 2>/dev/null; then

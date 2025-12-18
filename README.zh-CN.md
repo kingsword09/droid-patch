@@ -214,6 +214,7 @@ npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-
 - **每实例独立代理**：每个 droid 实例运行自己的代理，自动分配端口
 - **自动清理**：droid 退出时代理自动停止
 - **转发目标**：使用 `--api-base` 配合 `--websearch` 可将非搜索请求转发到自定义后端
+- **非交互直通**：运行 `--version`/`version`、`--help`/`help`、`completion(s)`、`exec` 等命令时不会启动代理
 
 **使用方法**：
 
@@ -339,6 +340,7 @@ npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
 - **Git 集成**：显示当前分支和差异摘要（+插入行数，-删除行数）
 - **压缩指示器**：显示上下文压缩正在进行中
 - **PTY 代理架构**：为状态栏预留底部行，避免闪烁
+- **非交互直通**：运行 `--version`/`version`、`--help`/`help`、`completion(s)`、`exec` 或在非 TTY（管道/重定向）时自动绕过状态栏
 
 **工作原理**：
 

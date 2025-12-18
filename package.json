@@ -22,8 +22,8 @@
   "scripts": {
     "build": "npx tsdown",
     "dev": "npx tsdown --watch",
-    "start": "node dist/cli.js",
-    "test": "node dist/cli.js --help",
+    "start": "node dist/cli.mjs",
+    "test": "npm run build && node --test",
     "lint": "oxlint --type-aware --type-check",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
