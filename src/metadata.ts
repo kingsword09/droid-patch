@@ -39,6 +39,8 @@ export interface AliasMetadata {
     websearch: boolean;
     /** Whether statusline wrapper is enabled */
     statusline?: boolean;
+    /** Whether sessions browser is enabled */
+    sessions?: boolean;
     /** @deprecated Old proxy field, kept for backward compatibility */
     proxy?: string | null;
     reasoningEffort: boolean;

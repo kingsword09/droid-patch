@@ -761,9 +761,11 @@ main().catch(() => {});
 function generateStatuslineWrapperScript(
   execTargetPath: string,
   monitorScriptPath: string,
+  sessionsScriptPath?: string,
 ): string {
   const execTargetJson = JSON.stringify(execTargetPath);
   const monitorScriptJson = JSON.stringify(monitorScriptPath);
+  const sessionsScriptJson = sessionsScriptPath ? JSON.stringify(sessionsScriptPath) : "None";
 
   return `#!/usr/bin/env python3
 # Droid with Statusline (PTY proxy)
@@ -790,6 +792,7 @@ import fcntl
 
 EXEC_TARGET = ${execTargetJson}
 STATUSLINE_MONITOR = ${monitorScriptJson}
+SESSIONS_SCRIPT = ${sessionsScriptJson}
 
 IS_APPLE_TERMINAL = os.environ.get("TERM_PROGRAM") == "Apple_Terminal"
 MIN_RENDER_INTERVAL_MS = 800 if IS_APPLE_TERMINAL else 400
@@ -828,6 +831,25 @@ def _exec_passthrough():
     except Exception as e:
         sys.stderr.write(f"[statusline] passthrough failed: {e}\\n")
         sys.exit(1)
+
+def _is_sessions_command(argv):
+    for a in argv:
+        if a == "--":
+            return False
+        if a == "--sessions":
+            return True
+    return False
+
+def _run_sessions():
+    if SESSIONS_SCRIPT and os.path.exists(SESSIONS_SCRIPT):
+        os.execvp("node", ["node", SESSIONS_SCRIPT])
+    else:
+        sys.stderr.write("[statusline] sessions script not found\\n")
+        sys.exit(1)
+
+# Handle --sessions command
+if _is_sessions_command(sys.argv[1:]):
+    _run_sessions()
 
 # Passthrough for non-interactive/meta commands (avoid clearing screen / PTY proxy)
 if (not sys.stdin.isatty()) or (not sys.stdout.isatty()) or _should_passthrough(sys.argv[1:]):
@@ -1732,6 +1754,7 @@ export async function createStatuslineFiles(
   outputDir: string,
   execTargetPath: string,
   aliasName: string,
+  sessionsScriptPath?: string,
 ): Promise<{ wrapperScript: string; monitorScript: string }> {
   if (!existsSync(outputDir)) {
     await mkdir(outputDir, { recursive: true });
@@ -1745,7 +1768,7 @@ export async function createStatuslineFiles(
 
   await writeFile(
     wrapperScriptPath,
-    generateStatuslineWrapperScript(execTargetPath, monitorScriptPath),
+    generateStatuslineWrapperScript(execTargetPath, monitorScriptPath, sessionsScriptPath),
   );
   await chmod(wrapperScriptPath, 0o755);
 
