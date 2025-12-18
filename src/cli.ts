@@ -17,6 +17,7 @@ import {
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
 import { createStatuslineFiles } from "./statusline-patch.ts";
+import { createSessionsScript } from "./sessions-patch.ts";
 import {
   saveAliasMetadata,
   createMetadata,
@@ -111,6 +112,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
   )
   .option("--statusline", "Enable a Claude-style statusline (terminal UI)")
+  .option("--sessions", "Enable sessions browser (--sessions flag in alias)")
   .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
     "--reasoning-effort",
@@ -133,6 +135,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
     const statusline = options["statusline"] as boolean;
+    const sessions = options["sessions"] as boolean;
     const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
@@ -195,7 +198,18 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       if (statusline) {
         const statuslineDir = join(homedir(), ".droid-patch", "statusline");
-        const { wrapperScript } = await createStatuslineFiles(statuslineDir, execTargetPath, alias);
+        // Create sessions script only if --sessions is enabled
+        let sessionsScript: string | undefined;
+        if (sessions) {
+          const result = await createSessionsScript(statuslineDir, alias);
+          sessionsScript = result.sessionsScript;
+        }
+        const { wrapperScript } = await createStatuslineFiles(
+          statuslineDir,
+          execTargetPath,
+          alias,
+          sessionsScript,
+        );
         execTargetPath = wrapperScript;
       }
 
@@ -213,6 +227,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           apiBase: apiBase || null,
           websearch: !!websearch,
           statusline: !!statusline,
+          sessions: !!sessions,
           reasoningEffort: false,
           noTelemetry: false,
           standalone: standalone,
@@ -523,10 +538,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (statusline) {
           const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          let sessionsScript: string | undefined;
+          if (sessions) {
+            const result = await createSessionsScript(statuslineDir, alias);
+            sessionsScript = result.sessionsScript;
+          }
           const { wrapperScript } = await createStatuslineFiles(
             statuslineDir,
             execTargetPath,
             alias,
+            sessionsScript,
           );
           execTargetPath = wrapperScript;
           console.log();
@@ -551,6 +572,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             apiBase: apiBase || null,
             websearch: !!websearch,
             statusline: !!statusline,
+            sessions: !!sessions,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
@@ -869,10 +891,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (meta.patches.statusline) {
           const statuslineDir = join(homedir(), ".droid-patch", "statusline");
+          let sessionsScript: string | undefined;
+          if (meta.patches.sessions) {
+            const result = await createSessionsScript(statuslineDir, meta.name);
+            sessionsScript = result.sessionsScript;
+          }
           const { wrapperScript } = await createStatuslineFiles(
             statuslineDir,
             execTargetPath,
             meta.name,
+            sessionsScript,
           );
           execTargetPath = wrapperScript;
           if (verbose) {
