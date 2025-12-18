@@ -38,6 +38,9 @@ npx droid-patch --statusline droid-status
 # 组合 --websearch 和 --statusline
 npx droid-patch --websearch --statusline droid-full-ui
 
+# 启用会话浏览器（交互式会话选择器）
+npx droid-patch --statusline --sessions droid-full
+
 # 组合多个修补选项
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
@@ -70,6 +73,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
 | `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                                                     |
 | `--statusline`        | 启用 Claude 风格的终端状态栏（显示模型、上下文、git 信息）                                      |
+| `--sessions`          | 启用交互式会话浏览器（需配合 `--statusline`，可浏览和恢复历史会话）                             |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）                               |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
@@ -370,6 +374,58 @@ npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
 
 **注意**：状态栏需要 Python 3 来运行 PTY 包装器。在现代终端模拟器（iTerm2、Alacritty、Kitty 等）中效果最佳。支持 Apple Terminal，但使用较长的渲染间隔以减少闪烁。
 
+### `--sessions`
+
+启用交互式会话浏览器，可以浏览、搜索和恢复当前目录下的历史会话。
+
+**用途**：快速查找和恢复之前的对话，无需记住会话 ID。
+
+**功能特性**：
+
+- **交互式选择器**：使用方向键（↑/↓）或 vim 键（j/k）导航
+- **会话详情**：显示会话 ID、标题、模型、消息数量、时间戳
+- **输入预览**：显示每个会话的第一条和最后一条用户输入
+- **自动恢复**：按 Enter 恢复选中的会话，保留所有 patch 功能
+- **过滤结果**：只显示有实际用户交互的会话（不显示空会话）
+- **按时间排序**：最近使用的会话排在最前面
+
+**使用方法**：
+
+```bash
+# 启用会话浏览器（需要 --statusline）
+npx droid-patch --statusline --sessions droid-full
+
+# 浏览会话
+droid-full --sessions
+```
+
+**交互控制**：
+
+- `↑`/`↓` 或 `j`/`k` - 上下导航
+- `Page Up`/`Page Down` - 翻页
+- `Enter` - 恢复选中的会话
+- `q` 或 `Ctrl+C` - 退出
+
+**显示示例**：
+
+```
+Sessions: /Users/you/project
+[↑/↓] Select  [Enter] Resume  [q] Quit
+
+▶ 修复 statusline 闪烁问题
+    ID: abc123def456...
+    Last: 12-18 14:30 | Model: claude-sonnet-4 | 42 msgs
+    First input: statusline 在窗口调整时闪烁...
+    Last input:  能否同时添加错误处理？
+
+  添加 websearch 功能 (12-17 09:15)
+  重构 CLI 选项 (12-16 18:22)
+
+Page 1/3 (25 sessions)
+```
+
+**注意**：`--sessions` 标志需要启用 `--statusline`。会话存储在 `~/.factory/sessions/` 目录中，按当前工作目录过滤。
+
 ---
 
 ## WebSearch 配置指南
@@ -667,6 +723,10 @@ npx droid-patch --disable-telemetry droid-private
 # 状态栏模式：Claude 风格的终端状态栏
 npx droid-patch --statusline droid-status
 
+# 状态栏 + 会话浏览器：浏览和恢复历史会话
+npx droid-patch --statusline --sessions droid-full
+droid-full --sessions  # 交互式会话浏览器
+
 # Websearch + 状态栏：完整 UI 体验
 npx droid-patch --websearch --statusline droid-full-ui
 
@@ -690,6 +750,7 @@ npx droid-patch list
 npx droid-patch remove droid-search              # 删除单个别名
 npx droid-patch remove --flag=websearch          # 删除所有 websearch 别名
 npx droid-patch remove --flag=statusline         # 删除所有 statusline 别名
+npx droid-patch remove --flag=sessions           # 删除所有启用会话浏览器的别名
 npx droid-patch remove --flag=standalone         # 删除所有 standalone 别名
 npx droid-patch remove --patch-version=0.4.0     # 按 droid-patch 版本删除
 npx droid-patch clear                            # 删除所有

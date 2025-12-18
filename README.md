@@ -38,6 +38,9 @@ npx droid-patch --statusline droid-status
 # Combine --websearch and --statusline
 npx droid-patch --websearch --statusline droid-full-ui
 
+# Enable sessions browser (interactive session selector)
+npx droid-patch --statusline --sessions droid-full
+
 # Combine multiple patches
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
@@ -70,6 +73,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
 | `--websearch`         | Inject local WebSearch proxy with multiple search providers                                                  |
 | `--statusline`        | Enable Claude-style terminal statusline (shows model, context, git info)                                     |
+| `--sessions`          | Enable interactive sessions browser (use with `--statusline`, browse and resume past sessions)               |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                                          |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
@@ -370,6 +374,58 @@ npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
 
 **Note**: The statusline requires Python 3 for the PTY wrapper. It works best in modern terminal emulators (iTerm2, Alacritty, Kitty, etc.). Apple Terminal is supported but uses a longer render interval to reduce flicker.
 
+### `--sessions`
+
+Enables an interactive sessions browser that allows you to browse, search, and resume past sessions in the current directory.
+
+**Purpose**: Quickly find and resume previous conversations without remembering session IDs.
+
+**Features**:
+
+- **Interactive selector**: Use arrow keys (↑/↓) or vim keys (j/k) to navigate
+- **Session details**: Shows session ID, title, model, message count, timestamps
+- **First/last input display**: Preview what you discussed in each session
+- **Auto-resume**: Press Enter to resume the selected session with all patch features preserved
+- **Filtered results**: Only shows sessions with actual user interactions (no empty sessions)
+- **Sorted by recency**: Most recently used sessions appear first
+
+**Usage**:
+
+```bash
+# Enable sessions browser (requires --statusline)
+npx droid-patch --statusline --sessions droid-full
+
+# Browse sessions
+droid-full --sessions
+```
+
+**Interactive controls**:
+
+- `↑`/`↓` or `j`/`k` - Navigate up/down
+- `Page Up`/`Page Down` - Jump pages
+- `Enter` - Resume selected session
+- `q` or `Ctrl+C` - Quit
+
+**Example display**:
+
+```
+Sessions: /Users/you/project
+[↑/↓] Select  [Enter] Resume  [q] Quit
+
+▶ Fix statusline flickering issue
+    ID: abc123def456...
+    Last: 12-18 14:30 | Model: claude-sonnet-4 | 42 msgs
+    First input: The statusline is flickering when...
+    Last input:  Can you also add error handling?
+
+  Add websearch feature (12-17 09:15)
+  Refactor CLI options (12-16 18:22)
+
+Page 1/3 (25 sessions)
+```
+
+**Note**: The `--sessions` flag requires `--statusline` to be enabled. Sessions are stored in `~/.factory/sessions/` and filtered by the current working directory.
+
 ---
 
 ## WebSearch Configuration Guide
@@ -667,6 +723,10 @@ npx droid-patch --disable-telemetry droid-private
 # Statusline mode: Claude-style terminal statusline
 npx droid-patch --statusline droid-status
 
+# Statusline + Sessions: browse and resume past sessions
+npx droid-patch --statusline --sessions droid-full
+droid-full --sessions  # Interactive session browser
+
 # Websearch + Statusline: full UI experience
 npx droid-patch --websearch --statusline droid-full-ui
 
@@ -690,6 +750,7 @@ npx droid-patch list
 npx droid-patch remove droid-search              # remove single alias
 npx droid-patch remove --flag=websearch          # remove all websearch aliases
 npx droid-patch remove --flag=statusline         # remove all statusline aliases
+npx droid-patch remove --flag=sessions           # remove all sessions-enabled aliases
 npx droid-patch remove --flag=standalone         # remove all standalone aliases
 npx droid-patch remove --patch-version=0.4.0     # remove by droid-patch version
 npx droid-patch clear                            # remove everything
