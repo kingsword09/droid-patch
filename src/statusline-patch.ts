@@ -29,6 +29,7 @@ const MIN_RENDER_INTERVAL_MS = IS_APPLE_TERMINAL ? 1000 : 500;
 const START_MS = Date.now();
 const ARGS = process.argv.slice(2);
 const PGID = Number(process.env.DROID_STATUSLINE_PGID || '');
+const SESSION_ID_RE = /"sessionId":"([0-9a-f-]{36})"/i;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -36,6 +37,28 @@ function sleep(ms) {
 
 function isPositiveInt(n) {
   return Number.isFinite(n) && n > 0;
+}
+
+function extractSessionIdFromLine(line) {
+  if (!line) return null;
+  const m = String(line).match(SESSION_ID_RE);
+  return m ? m[1] : null;
+}
+
+function nextCompactionState(line, current) {
+  if (!line) return current;
+  if (line.includes('[Compaction] Start')) return true;
+  if (
+    line.includes('[Compaction] End') ||
+    line.includes('[Compaction] Done') ||
+    line.includes('[Compaction] Finish') ||
+    line.includes('[Compaction] Finished') ||
+    line.includes('[Compaction] Complete') ||
+    line.includes('[Compaction] Completed')
+  ) {
+    return false;
+  }
+  return current;
 }
 
 function firstNonNull(promises) {
@@ -547,6 +570,7 @@ async function main() {
   }
 
   if (!sessionId || !workspaceDir) return;
+  const sessionIdLower = String(sessionId).toLowerCase();
 
   const { settingsPath, settings } = resolveSessionSettings(workspaceDir, sessionId);
   const modelId =
@@ -709,8 +733,37 @@ async function main() {
       const line = buffer.slice(0, idx).trimEnd();
       buffer = buffer.slice(idx + 1);
 
-      if (!line.includes('Context:')) continue;
-      if (!line.includes('"sessionId":"' + sessionId + '"')) continue;
+      const lineSessionId = extractSessionIdFromLine(line);
+      const isSessionLine =
+        lineSessionId && String(lineSessionId).toLowerCase() === sessionIdLower;
+
+      let compactionChanged = false;
+      if (line.includes('[Compaction]')) {
+        // Accept session-scoped compaction lines; allow end markers to clear even
+        // if the line lacks a session id (some builds omit Context on end lines).
+        if (isSessionLine || (compacting && !lineSessionId)) {
+          const next = nextCompactionState(line, compacting);
+          if (next !== compacting) {
+            compacting = next;
+            compactionChanged = true;
+          }
+        }
+      }
+
+      if (!line.includes('Context:')) {
+        if (compactionChanged) {
+          lastRenderAt = Date.now();
+          renderNow();
+        }
+        continue;
+      }
+      if (!isSessionLine) {
+        if (compactionChanged) {
+          lastRenderAt = Date.now();
+          renderNow();
+        }
+        continue;
+      }
 
       const ctxIndex = line.indexOf('Context: ');
       if (ctxIndex === -1) continue;
@@ -719,6 +772,10 @@ async function main() {
       try {
         ctx = JSON.parse(jsonStr);
       } catch {
+        if (compactionChanged) {
+          lastRenderAt = Date.now();
+          renderNow();
+        }
         continue;
       }
 
@@ -732,12 +789,8 @@ async function main() {
         if (Number.isFinite(out)) last.outputTokens = out;
       }
 
-      // Compaction state hint.
-      if (line.includes('[Compaction] Start')) compacting = true;
-      if (line.includes('[Compaction] End')) compacting = false;
-
       const now = Date.now();
-      if (now - lastRenderAt >= MIN_RENDER_INTERVAL_MS) {
+      if (compactionChanged || now - lastRenderAt >= MIN_RENDER_INTERVAL_MS) {
         lastRenderAt = now;
         renderNow();
       }
