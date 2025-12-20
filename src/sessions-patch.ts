@@ -199,27 +199,49 @@ async function main() {
   let selected = 0;
   let offset = 0;
 
+  function restoreTerminal() {
+    try { process.stdout.write(SHOW_CURSOR); } catch {}
+    try { process.stdin.setRawMode(false); } catch {}
+    try { process.stdin.pause(); } catch {}
+  }
+
+  function clearScreen() {
+    try { process.stdout.write(CLEAR); } catch {}
+  }
+
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdout.write(HIDE_CURSOR);
   
   render(sessions, selected, offset, rows);
 
-  process.stdin.on('data', (key) => {
+  const onKey = (key) => {
     const k = key.toString();
     
     if (k === 'q' || k === '\\x03') { // q or Ctrl+C
-      process.stdout.write(SHOW_CURSOR + CLEAR);
+      restoreTerminal();
+      clearScreen();
       process.exit(0);
     }
     
     if (k === '\\r' || k === '\\n') { // Enter
-      process.stdout.write(SHOW_CURSOR + CLEAR);
+      // Stop reading input / stop reacting to arrow keys before handing off to droid.
+      process.stdin.off('data', onKey);
+      restoreTerminal();
+      clearScreen();
       const session = sessions[selected];
       console.log(GREEN + 'Resuming session: ' + session.id + RESET);
       console.log(DIM + 'Using: ' + ALIAS_NAME + ' --resume ' + session.id + RESET + '\\n');
+
+      // Avoid the sessions browser reacting to signals while droid is running.
+      try { process.removeAllListeners('SIGINT'); } catch {}
+      try { process.removeAllListeners('SIGTERM'); } catch {}
+      try { process.on('SIGINT', () => {}); } catch {}
+      try { process.on('SIGTERM', () => {}); } catch {}
+
       const child = spawn(ALIAS_NAME, ['--resume', session.id], { stdio: 'inherit' });
       child.on('exit', (code) => process.exit(code || 0));
+      child.on('error', () => process.exit(1));
       return;
     }
     
@@ -242,10 +264,13 @@ async function main() {
     }
     
     render(sessions, selected, offset, rows);
-  });
+  };
+
+  process.stdin.on('data', onKey);
 
   process.on('SIGINT', () => {
-    process.stdout.write(SHOW_CURSOR + CLEAR);
+    restoreTerminal();
+    clearScreen();
     process.exit(0);
   });
 }
