@@ -154,11 +154,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const needsBinaryPatch =
       !!isCustom || !!skipLogin || !!reasoningEffort || !!noTelemetry || (!!apiBase && !websearch);
 
+    const statuslineEnabled = statusline;
+
     // Wrapper-only mode (no binary patching needed):
     // - --websearch (optional --standalone)
     // - --statusline
     // - both combined (statusline wraps websearch)
-    if (!needsBinaryPatch && (websearch || statusline)) {
+    if (!needsBinaryPatch && (websearch || statuslineEnabled)) {
       if (!alias) {
         console.log(styleText("red", "Error: Alias name required for --websearch/--statusline"));
         console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
@@ -177,7 +179,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           console.log(styleText("white", `Standalone mode: enabled`));
         }
       }
-      if (statusline) {
+      if (statuslineEnabled) {
         console.log(styleText("white", `Statusline: enabled`));
       }
       console.log();
@@ -196,7 +198,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         execTargetPath = wrapperScript;
       }
 
-      if (statusline) {
+      if (statuslineEnabled) {
         const statuslineDir = join(homedir(), ".droid-patch", "statusline");
         // Create sessions script only if --sessions is enabled
         let sessionsScript: string | undefined;
@@ -226,7 +228,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           skipLogin: false,
           apiBase: apiBase || null,
           websearch: !!websearch,
-          statusline: !!statusline,
+          statusline: !!statuslineEnabled,
           sessions: !!sessions,
           reasoningEffort: false,
           noTelemetry: false,
@@ -275,7 +277,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !skipLogin &&
       !apiBase &&
       !websearch &&
-      !statusline &&
+      !statuslineEnabled &&
       !reasoningEffort &&
       !noTelemetry
     ) {
@@ -536,7 +538,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           }
         }
 
-        if (statusline) {
+        if (statuslineEnabled) {
           const statuslineDir = join(homedir(), ".droid-patch", "statusline");
           let sessionsScript: string | undefined;
           if (sessions) {
@@ -555,7 +557,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         let aliasResult;
-        if (websearch || statusline) {
+        if (websearch || statuslineEnabled) {
           aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
           aliasResult = await createAlias(result.outputPath, alias, verbose);
@@ -571,7 +573,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             skipLogin: !!skipLogin,
             apiBase: apiBase || null,
             websearch: !!websearch,
-            statusline: !!statusline,
+            statusline: !!statuslineEnabled,
             sessions: !!sessions,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,

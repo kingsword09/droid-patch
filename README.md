@@ -72,7 +72,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
 | `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
 | `--websearch`         | Inject local WebSearch proxy with multiple search providers                                                  |
-| `--statusline`        | Enable Claude-style terminal statusline (shows model, context, git info)                                     |
+| `--statusline`        | Enable Claude-style terminal statusline (Bun-based wrapper; requires Bun >= 1.3.5)                           |
 | `--sessions`          | Enable interactive sessions browser (use with `--statusline`, browse and resume past sessions)               |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                                          |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
@@ -348,7 +348,7 @@ Enables a Claude-style statusline at the bottom of the terminal, displaying real
 
 **How it works**:
 
-1. A Python PTY wrapper intercepts terminal I/O and reserves bottom row(s)
+1. A Bun PTY wrapper intercepts terminal I/O and reserves bottom row(s)
 2. A Node.js monitor script tails the Factory log file (`~/.factory/logs/droid-log-single.log`)
 3. The monitor parses streaming token usage and emits statusline frames
 4. The wrapper renders the latest frame on the reserved rows
@@ -372,7 +372,7 @@ npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
  Model: claude-sonnet-4-20250514  Prov: anthropic  Ctx: 12345 (c8000+n4345)  In:33 Out:1273 Cre:33.9k Read:25.9k Think:212 LastOut:130  ⎇ main (+10,-5)  cwd: my-project
 ```
 
-**Note**: The statusline requires Python 3 for the PTY wrapper. It works best in modern terminal emulators (iTerm2, Alacritty, Kitty, etc.). Apple Terminal is supported but uses a longer render interval to reduce flicker.
+**Note**: The statusline uses a Bun-based PTY wrapper and requires Bun >= 1.3.5. It works best in modern terminal emulators (iTerm2, Alacritty, Kitty, etc.). Apple Terminal is supported but uses a longer render interval to reduce flicker.
 
 ### `--sessions`
 

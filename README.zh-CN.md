@@ -72,7 +72,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                                                     |
 | `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
 | `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                                                     |
-| `--statusline`        | 启用 Claude 风格的终端状态栏（显示模型、上下文、git 信息）                                      |
+| `--statusline`        | 启用 Claude 风格的终端状态栏（Bun 版本 wrapper；需要 Bun >= 1.3.5）                             |
 | `--sessions`          | 启用交互式会话浏览器（需配合 `--statusline`，可浏览和恢复历史会话）                             |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）                               |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
@@ -348,7 +348,7 @@ npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
 
 **工作原理**：
 
-1. Python PTY 包装器拦截终端 I/O 并预留底部行
+1. Bun PTY 包装器拦截终端 I/O 并预留底部行
 2. Node.js 监控脚本跟踪 Factory 日志文件（`~/.factory/logs/droid-log-single.log`）
 3. 监控器解析流式 token 使用并输出状态栏帧
 4. 包装器在预留行上渲染最新帧
@@ -372,7 +372,7 @@ npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
  Model: claude-sonnet-4-20250514  Prov: anthropic  Ctx: 12345 (c8000+n4345)  In:33 Out:1273 Cre:33.9k Read:25.9k Think:212 LastOut:130  ⎇ main (+10,-5)  cwd: my-project
 ```
 
-**注意**：状态栏需要 Python 3 来运行 PTY 包装器。在现代终端模拟器（iTerm2、Alacritty、Kitty 等）中效果最佳。支持 Apple Terminal，但使用较长的渲染间隔以减少闪烁。
+**注意**：状态栏使用 Bun 版本的 PTY 包装器，需要 Bun >= 1.3.5。在现代终端模拟器（iTerm2、Alacritty、Kitty 等）中效果最佳。支持 Apple Terminal，但使用较长的渲染间隔以减少闪烁。
 
 ### `--sessions`
 
