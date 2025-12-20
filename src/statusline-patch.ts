@@ -620,14 +620,34 @@ async function main() {
     } catch {}
   }, 0).unref();
 
-  // Seed prompt-context usage from existing logs (important for resumed sessions).
-  // Do this asynchronously to avoid delaying the first statusline frame.
-  if (resumeFlag || resumeId) {
+  let reseedInProgress = false;
+  let reseedQueued = false;
+
+  function updateLastFromContext(ctx, updateOutputTokens) {
+    const cacheRead = Number(ctx?.cacheReadInputTokens);
+    const contextCount = Number(ctx?.contextCount);
+    const out = Number(ctx?.outputTokens);
+    if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
+    if (Number.isFinite(contextCount)) last.contextCount = contextCount;
+    if (updateOutputTokens && Number.isFinite(out)) last.outputTokens = out;
+  }
+
+  function seedLastContextFromLog(options) {
+    const opts = options || {};
+    const maxScanBytes = Number.isFinite(opts.maxScanBytes) ? opts.maxScanBytes : 64 * 1024 * 1024;
+    const preferStreaming = !!opts.preferStreaming;
+
+    if (reseedInProgress) {
+      reseedQueued = true;
+      return;
+    }
+    reseedInProgress = true;
+
     setTimeout(() => {
       try {
-        // Backward scan to find the most recent streaming-context entry for this session.
-        // The log can be large and shared across multiple sessions.
-        const MAX_SCAN_BYTES = 64 * 1024 * 1024; // 64 MiB
+        // Backward scan to find the most recent context entry for this session.
+        // Prefer streaming context if requested; otherwise accept any context line
+        // that includes cacheReadInputTokens/contextCount fields.
         const CHUNK_BYTES = 1024 * 1024; // 1 MiB
 
         const fd = fs.openSync(LOG_PATH, 'r');
@@ -639,7 +659,7 @@ async function main() {
           let remainder = '';
           let seeded = false;
 
-          while (pos > 0 && scanned < MAX_SCAN_BYTES && !seeded) {
+          while (pos > 0 && scanned < maxScanBytes && !seeded) {
             const readSize = Math.min(CHUNK_BYTES, pos);
             const start = pos - readSize;
             const buf = Buffer.alloc(readSize);
@@ -659,8 +679,12 @@ async function main() {
               const line = String(lines[i] || '').trimEnd();
               if (!line) continue;
               if (!line.includes('Context:')) continue;
-              if (!line.includes('"sessionId":"' + sessionId + '"')) continue;
-              if (!line.includes('[Agent] Streaming result')) continue;
+              const sid = extractSessionIdFromLine(line);
+              if (!sid || String(sid).toLowerCase() !== sessionIdLower) continue;
+
+              const isStreaming = line.includes('[Agent] Streaming result');
+              if (preferStreaming && !isStreaming) continue;
+
               const ctxIndex = line.indexOf('Context: ');
               if (ctxIndex === -1) continue;
               const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
@@ -670,12 +694,13 @@ async function main() {
               } catch {
                 continue;
               }
-              const cacheRead = Number(ctx?.cacheReadInputTokens ?? 0);
-              const contextCount = Number(ctx?.contextCount ?? 0);
-              const out = Number(ctx?.outputTokens ?? 0);
-              if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
-              if (Number.isFinite(contextCount)) last.contextCount = contextCount;
-              if (Number.isFinite(out)) last.outputTokens = out;
+
+              const cacheRead = Number(ctx?.cacheReadInputTokens);
+              const contextCount = Number(ctx?.contextCount);
+              const hasUsage = Number.isFinite(cacheRead) || Number.isFinite(contextCount);
+              if (!hasUsage) continue;
+
+              updateLastFromContext(ctx, isStreaming);
               seeded = true;
               break;
             }
@@ -687,16 +712,31 @@ async function main() {
             fs.closeSync(fd);
           } catch {}
         }
-
-        renderNow();
       } catch {
         // ignore
+      } finally {
+        reseedInProgress = false;
+        if (reseedQueued) {
+          reseedQueued = false;
+          seedLastContextFromLog({ maxScanBytes, preferStreaming });
+          return;
+        }
+        renderNow();
       }
     }, 0).unref();
   }
 
+  // Seed prompt-context usage from existing logs (important for resumed sessions).
+  // Do this asynchronously to avoid delaying the first statusline frame.
+  let initialSeedDone = false;
+  if (resumeFlag || resumeId) {
+    initialSeedDone = true;
+    seedLastContextFromLog({ maxScanBytes: 64 * 1024 * 1024, preferStreaming: true });
+  }
+
   // Watch session settings for autonomy/reasoning changes (cheap polling with mtime).
   let settingsMtimeMs = 0;
+  let lastCtxPollMs = 0;
   setInterval(() => {
     try {
       const stat = fs.statSync(settingsPath);
@@ -719,6 +759,17 @@ async function main() {
     }
   }, 750).unref();
 
+  // Fallback: periodically rescan log if context is still zero after startup.
+  // This handles cases where tail misses early log entries.
+  setInterval(() => {
+    const now = Date.now();
+    if (now - START_MS < 3000) return; // wait 3s after startup
+    if (last.contextCount > 0 || last.cacheReadInputTokens > 0) return; // already have data
+    if (now - lastCtxPollMs < 5000) return; // throttle to every 5s
+    lastCtxPollMs = now;
+    seedLastContextFromLog({ maxScanBytes: 4 * 1024 * 1024, preferStreaming: false });
+  }, 2000).unref();
+
   // Follow the Factory log and update based on session-scoped events.
   const tail = spawn('tail', ['-n', '0', '-F', LOG_PATH], {
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -738,6 +789,7 @@ async function main() {
         lineSessionId && String(lineSessionId).toLowerCase() === sessionIdLower;
 
       let compactionChanged = false;
+      let compactionEnded = false;
       if (line.includes('[Compaction]')) {
         // Accept session-scoped compaction lines; allow end markers to clear even
         // if the line lacks a session id (some builds omit Context on end lines).
@@ -746,6 +798,7 @@ async function main() {
           if (next !== compacting) {
             compacting = next;
             compactionChanged = true;
+            if (!compacting) compactionEnded = true;
           }
         }
       }
@@ -755,12 +808,24 @@ async function main() {
           lastRenderAt = Date.now();
           renderNow();
         }
+        if (compactionEnded) {
+          // Compaction often completes between turns. Refresh ctx numbers promptly
+          // by rescanning the most recent Context entry for this session.
+          setTimeout(() => {
+            seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: false });
+          }, 250).unref();
+        }
         continue;
       }
       if (!isSessionLine) {
         if (compactionChanged) {
           lastRenderAt = Date.now();
           renderNow();
+        }
+        if (compactionEnded) {
+          setTimeout(() => {
+            seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: false });
+          }, 250).unref();
         }
         continue;
       }
@@ -779,20 +844,33 @@ async function main() {
         continue;
       }
 
-      // Streaming token usage (best source for current context usage).
+      // Context usage can appear on multiple session-scoped log lines; update whenever present.
+      // (Streaming is still the best source for outputTokens / LastOut.)
+      updateLastFromContext(ctx, false);
+
+      // For new sessions: if this is the first valid Context line and ctx is still 0,
+      // trigger a reseed to catch any earlier log entries we might have missed.
+      if (!initialSeedDone && last.contextCount === 0) {
+        initialSeedDone = true;
+        setTimeout(() => {
+          seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: false });
+        }, 100).unref();
+      }
+
       if (line.includes('[Agent] Streaming result')) {
-        const cacheRead = Number(ctx?.cacheReadInputTokens ?? 0);
-        const contextCount = Number(ctx?.contextCount ?? 0);
-        const out = Number(ctx?.outputTokens ?? 0);
-        if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
-        if (Number.isFinite(contextCount)) last.contextCount = contextCount;
-        if (Number.isFinite(out)) last.outputTokens = out;
+        updateLastFromContext(ctx, true);
       }
 
       const now = Date.now();
       if (compactionChanged || now - lastRenderAt >= MIN_RENDER_INTERVAL_MS) {
         lastRenderAt = now;
         renderNow();
+      }
+
+      if (compactionEnded) {
+        setTimeout(() => {
+          seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: false });
+        }, 250).unref();
       }
     }
   });
