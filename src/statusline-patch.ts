@@ -45,19 +45,31 @@ function extractSessionIdFromLine(line) {
   return m ? m[1] : null;
 }
 
+function parseLineTimestampMs(line) {
+  const s = String(line || '');
+  if (!s || s[0] !== '[') return null;
+  const end = s.indexOf(']');
+  if (end <= 1) return null;
+  const raw = s.slice(1, end);
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function safeStatMtimeMs(p) {
+  try {
+    const stat = fs.statSync(p);
+    const ms = Number(stat?.mtimeMs ?? 0);
+    return Number.isFinite(ms) ? ms : 0;
+  } catch {
+    return 0;
+  }
+}
+
 function nextCompactionState(line, current) {
   if (!line) return current;
   if (line.includes('[Compaction] Start')) return true;
-  if (
-    line.includes('[Compaction] End') ||
-    line.includes('[Compaction] Done') ||
-    line.includes('[Compaction] Finish') ||
-    line.includes('[Compaction] Finished') ||
-    line.includes('[Compaction] Complete') ||
-    line.includes('[Compaction] Completed')
-  ) {
-    return false;
-  }
+  const endMarkers = ['End', 'Done', 'Finish', 'Finished', 'Complete', 'Completed'];
+  if (endMarkers.some(m => line.includes('[Compaction] ' + m))) return false;
   return current;
 }
 
@@ -523,7 +535,7 @@ function buildLine(params) {
 }
 
 async function main() {
-  const factoryConfig = readJsonFile(CONFIG_PATH) || {};
+  let factoryConfig = readJsonFile(CONFIG_PATH) || {};
 
   const cwd = process.cwd();
   const cwdBase = path.basename(cwd) || cwd;
@@ -570,22 +582,68 @@ async function main() {
   }
 
   if (!sessionId || !workspaceDir) return;
-  const sessionIdLower = String(sessionId).toLowerCase();
+  let sessionIdLower = String(sessionId).toLowerCase();
 
-  const { settingsPath, settings } = resolveSessionSettings(workspaceDir, sessionId);
-  const modelId =
-    (settings && typeof settings.model === 'string' ? settings.model : null) || resolveGlobalSettingsModel();
+  let settingsPath = '';
+  let sessionSettings = {};
+  ({ settingsPath, settings: sessionSettings } = resolveSessionSettings(workspaceDir, sessionId));
 
-  const provider = resolveProvider(modelId, factoryConfig);
-  const underlyingModel = resolveUnderlyingModelId(modelId, factoryConfig) || modelId || 'unknown';
+  let configMtimeMs = safeStatMtimeMs(CONFIG_PATH);
+  let globalSettingsMtimeMs = safeStatMtimeMs(GLOBAL_SETTINGS_PATH);
+  let globalSettingsModel = resolveGlobalSettingsModel();
+
+  let modelId =
+    (sessionSettings && typeof sessionSettings.model === 'string' ? sessionSettings.model : null) ||
+    globalSettingsModel ||
+    null;
+
+  let provider =
+    sessionSettings && typeof sessionSettings.providerLock === 'string'
+      ? sessionSettings.providerLock
+      : resolveProvider(modelId, factoryConfig);
+  let underlyingModel = resolveUnderlyingModelId(modelId, factoryConfig) || modelId || 'unknown';
+
+  function refreshModel() {
+    const nextModelId =
+      (sessionSettings && typeof sessionSettings.model === 'string' ? sessionSettings.model : null) ||
+      globalSettingsModel ||
+      null;
+
+    // Use providerLock if set, otherwise resolve from model/config (same logic as initialization)
+    const nextProvider =
+      sessionSettings && typeof sessionSettings.providerLock === 'string'
+        ? sessionSettings.providerLock
+        : resolveProvider(nextModelId, factoryConfig);
+    const nextUnderlying = resolveUnderlyingModelId(nextModelId, factoryConfig) || nextModelId || 'unknown';
+
+    let changed = false;
+    if (nextModelId !== modelId) {
+      modelId = nextModelId;
+      changed = true;
+    }
+    if (nextProvider !== provider) {
+      provider = nextProvider;
+      changed = true;
+    }
+    if (nextUnderlying !== underlyingModel) {
+      underlyingModel = nextUnderlying;
+      changed = true;
+    }
+
+    if (changed) renderNow();
+  }
 
   let last = { cacheReadInputTokens: 0, contextCount: 0, outputTokens: 0 };
-  let sessionUsage = settings && typeof settings.tokenUsage === 'object' && settings.tokenUsage ? settings.tokenUsage : {};
+  let sessionUsage =
+    sessionSettings && typeof sessionSettings.tokenUsage === 'object' && sessionSettings.tokenUsage
+      ? sessionSettings.tokenUsage
+      : {};
   let compacting = false;
   let lastRenderAt = 0;
   let lastRenderedLine = '';
   let gitBranch = '';
   let gitDiff = '';
+  let lastContextMs = 0;
 
   function renderNow() {
     const usedTokens = (last.cacheReadInputTokens || 0) + (last.contextCount || 0);
@@ -623,19 +681,25 @@ async function main() {
   let reseedInProgress = false;
   let reseedQueued = false;
 
-  function updateLastFromContext(ctx, updateOutputTokens) {
+  function updateLastFromContext(ctx, updateOutputTokens, tsMs) {
+    const ts = Number.isFinite(tsMs) ? tsMs : null;
+    if (ts != null && lastContextMs && ts < lastContextMs) return false;
     const cacheRead = Number(ctx?.cacheReadInputTokens);
     const contextCount = Number(ctx?.contextCount);
     const out = Number(ctx?.outputTokens);
     if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
     if (Number.isFinite(contextCount)) last.contextCount = contextCount;
     if (updateOutputTokens && Number.isFinite(out)) last.outputTokens = out;
+    if (ts != null) lastContextMs = ts;
+    return true;
   }
 
   function seedLastContextFromLog(options) {
     const opts = options || {};
     const maxScanBytes = Number.isFinite(opts.maxScanBytes) ? opts.maxScanBytes : 64 * 1024 * 1024;
     const preferStreaming = !!opts.preferStreaming;
+    const minTimestampMs = Number.isFinite(lastContextMs) && lastContextMs > 0 ? lastContextMs : 0;
+    const earlyStopAfterBestBytes = Math.min(2 * 1024 * 1024, Math.max(256 * 1024, maxScanBytes));
 
     if (reseedInProgress) {
       reseedQueued = true;
@@ -657,15 +721,20 @@ async function main() {
           let pos = size;
           let scanned = 0;
           let remainder = '';
-          let seeded = false;
+          let bestCtx = null;
+          let bestIsStreaming = false;
+          let bestTs = null;
+          let bestHasTs = false;
+          let bytesSinceBest = 0;
 
-          while (pos > 0 && scanned < maxScanBytes && !seeded) {
+          while (pos > 0 && scanned < maxScanBytes && (!bestHasTs || bytesSinceBest < earlyStopAfterBestBytes)) {
             const readSize = Math.min(CHUNK_BYTES, pos);
             const start = pos - readSize;
             const buf = Buffer.alloc(readSize);
             fs.readSync(fd, buf, 0, readSize, start);
             pos = start;
             scanned += readSize;
+            bytesSinceBest += readSize;
 
             let text = buf.toString('utf8') + remainder;
             let lines = String(text).split('\\n');
@@ -700,12 +769,33 @@ async function main() {
               const hasUsage = Number.isFinite(cacheRead) || Number.isFinite(contextCount);
               if (!hasUsage) continue;
 
-              updateLastFromContext(ctx, isStreaming);
-              seeded = true;
-              break;
+              const ts = parseLineTimestampMs(line);
+              if (ts != null && minTimestampMs && ts < minTimestampMs) {
+                continue;
+              }
+
+              if (ts != null) {
+                if (!bestHasTs || ts > bestTs) {
+                  bestCtx = ctx;
+                  bestIsStreaming = isStreaming;
+                  bestTs = ts;
+                  bestHasTs = true;
+                  bytesSinceBest = 0;
+                }
+              } else if (!bestHasTs && !bestCtx) {
+                // No timestamps available yet: the first match when scanning backward
+                // is the most recent in file order.
+                bestCtx = ctx;
+                bestIsStreaming = isStreaming;
+                bestTs = null;
+              }
             }
 
             if (remainder.length > 8192) remainder = remainder.slice(-8192);
+          }
+
+          if (bestCtx) {
+            updateLastFromContext(bestCtx, bestIsStreaming, bestTs);
           }
         } finally {
           try {
@@ -738,16 +828,35 @@ async function main() {
   let settingsMtimeMs = 0;
   let lastCtxPollMs = 0;
   setInterval(() => {
+    // Refresh config/global settings if they changed (model display depends on these).
+    const configMtime = safeStatMtimeMs(CONFIG_PATH);
+    if (configMtime && configMtime !== configMtimeMs) {
+      configMtimeMs = configMtime;
+      factoryConfig = readJsonFile(CONFIG_PATH) || {};
+      refreshModel();
+    }
+
+    const globalMtime = safeStatMtimeMs(GLOBAL_SETTINGS_PATH);
+    if (globalMtime && globalMtime !== globalSettingsMtimeMs) {
+      globalSettingsMtimeMs = globalMtime;
+      globalSettingsModel = resolveGlobalSettingsModel();
+      refreshModel();
+    }
+
     try {
       const stat = fs.statSync(settingsPath);
       if (stat.mtimeMs === settingsMtimeMs) return;
       settingsMtimeMs = stat.mtimeMs;
       const next = readJsonFile(settingsPath) || {};
+      sessionSettings = next;
 
       // Keep session token usage in sync (used by /status).
       if (next && typeof next.tokenUsage === 'object' && next.tokenUsage) {
         sessionUsage = next.tokenUsage;
       }
+
+      // Keep model/provider in sync (model can change during a running session).
+      refreshModel();
 
       const now = Date.now();
       if (now - lastRenderAt >= MIN_RENDER_INTERVAL_MS) {
@@ -770,6 +879,37 @@ async function main() {
     seedLastContextFromLog({ maxScanBytes: 4 * 1024 * 1024, preferStreaming: false });
   }, 2000).unref();
 
+  function switchToSession(nextSessionId) {
+    if (!nextSessionId || !isUuid(nextSessionId)) return;
+    const nextLower = String(nextSessionId).toLowerCase();
+    if (nextLower === sessionIdLower) return;
+
+    sessionId = nextSessionId;
+    sessionIdLower = nextLower;
+
+    const resolved = resolveSessionSettings(workspaceDir, nextSessionId);
+    settingsPath = resolved.settingsPath;
+    sessionSettings = resolved.settings || {};
+
+    sessionUsage =
+      sessionSettings && typeof sessionSettings.tokenUsage === 'object' && sessionSettings.tokenUsage
+        ? sessionSettings.tokenUsage
+        : {};
+
+    // Reset cached state for the new session.
+    last = { cacheReadInputTokens: 0, contextCount: 0, outputTokens: 0 };
+    lastContextMs = 0;
+    compacting = false;
+    settingsMtimeMs = 0;
+    lastCtxPollMs = 0;
+
+    refreshModel();
+    renderNow();
+
+    // Best-effort: if the new session already has Context lines in the log, seed quickly.
+    seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: false });
+  }
+
   // Follow the Factory log and update based on session-scoped events.
   const tail = spawn('tail', ['-n', '0', '-F', LOG_PATH], {
     stdio: ['ignore', 'pipe', 'ignore'],
@@ -784,9 +924,34 @@ async function main() {
       const line = buffer.slice(0, idx).trimEnd();
       buffer = buffer.slice(idx + 1);
 
+      const tsMs = parseLineTimestampMs(line);
       const lineSessionId = extractSessionIdFromLine(line);
       const isSessionLine =
         lineSessionId && String(lineSessionId).toLowerCase() === sessionIdLower;
+
+      // /compress (aka /compact) can create a new session ID. Follow it so ctx/model keep updating.
+      if (line.includes('oldSessionId') && line.includes('newSessionId') && line.includes('Context:')) {
+        const ctxIndex = line.indexOf('Context: ');
+        if (ctxIndex !== -1) {
+          const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
+          try {
+            const meta = JSON.parse(jsonStr);
+            const oldId = meta?.oldSessionId;
+            const newId = meta?.newSessionId;
+            if (
+              isUuid(oldId) &&
+              isUuid(newId) &&
+              String(oldId).toLowerCase() === sessionIdLower &&
+              String(newId).toLowerCase() !== sessionIdLower
+            ) {
+              switchToSession(String(newId));
+              continue;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
 
       let compactionChanged = false;
       let compactionEnded = false;
@@ -801,6 +966,20 @@ async function main() {
             if (!compacting) compactionEnded = true;
           }
         }
+      }
+
+      if (compactionChanged && compacting) {
+        // Compaction can start after a context-limit error. Ensure we display the latest
+        // pre-compaction ctx by reseeding from log (tail can miss bursts).
+        seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: true });
+      }
+
+      if (compactionEnded) {
+        // ctx usage changes dramatically after compaction, but the next Context line
+        // can be delayed. Clear displayed ctx immediately to avoid showing stale numbers.
+        last.cacheReadInputTokens = 0;
+        last.contextCount = 0;
+        if (tsMs != null) lastContextMs = tsMs;
       }
 
       if (!line.includes('Context:')) {
@@ -846,7 +1025,7 @@ async function main() {
 
       // Context usage can appear on multiple session-scoped log lines; update whenever present.
       // (Streaming is still the best source for outputTokens / LastOut.)
-      updateLastFromContext(ctx, false);
+      updateLastFromContext(ctx, false, tsMs);
 
       // For new sessions: if this is the first valid Context line and ctx is still 0,
       // trigger a reseed to catch any earlier log entries we might have missed.
@@ -858,7 +1037,7 @@ async function main() {
       }
 
       if (line.includes('[Agent] Streaming result')) {
-        updateLastFromContext(ctx, true);
+        updateLastFromContext(ctx, true, tsMs);
       }
 
       const now = Date.now();
@@ -894,995 +1073,7 @@ function generateStatuslineWrapperScript(
   monitorScriptPath: string,
   sessionsScriptPath?: string,
 ): string {
-  // Bun-only: kept for backward-compat in source, but generates Bun wrapper.
   return generateStatuslineWrapperScriptBun(execTargetPath, monitorScriptPath, sessionsScriptPath);
-  /*
-  const execTargetJson = JSON.stringify(execTargetPath);
-  const monitorScriptJson = JSON.stringify(monitorScriptPath);
-  const sessionsScriptJson = sessionsScriptPath ? JSON.stringify(sessionsScriptPath) : "None";
-
-  return `#!/usr/bin/env python3
-# Droid with Statusline (PTY proxy)
-# Auto-generated by droid-patch --statusline
-#
-# Design goal (KISS + no flicker):
-# - droid draws into a child PTY sized to (terminal_rows - RESERVED_ROWS)
-# - this wrapper is the ONLY writer to the real terminal
-# - a Node monitor emits statusline frames to a pipe; wrapper renders the latest frame
-#   onto the reserved bottom row (a stable "second footer line").
-
-import os
-import pty
-import re
-import select
-import signal
-import struct
-import subprocess
-import sys
-import termios
-import time
-import tty
-import fcntl
-
-EXEC_TARGET = ${execTargetJson}
-STATUSLINE_MONITOR = ${monitorScriptJson}
-SESSIONS_SCRIPT = ${sessionsScriptJson}
-
-IS_APPLE_TERMINAL = os.environ.get("TERM_PROGRAM") == "Apple_Terminal"
-MIN_RENDER_INTERVAL_MS = 800 if IS_APPLE_TERMINAL else 400
-QUIET_MS = 50  # Reduced to prevent statusline disappearing
-FORCE_REPAINT_INTERVAL_MS = 2000  # Force repaint every 2 seconds
-RESERVED_ROWS = 1
-
-BYPASS_FLAGS = {"--help", "-h", "--version", "-V"}
-BYPASS_COMMANDS = {"help", "version", "completion", "completions", "exec"}
-
-def _should_passthrough(argv):
-    # Any help/version flags before "--"
-    for a in argv:
-        if a == "--":
-            break
-        if a in BYPASS_FLAGS:
-            return True
-
-    # Top-level command token
-    end_opts = False
-    cmd = None
-    for a in argv:
-        if a == "--":
-            end_opts = True
-            continue
-        if (not end_opts) and a.startswith("-"):
-            continue
-        cmd = a
-        break
-
-    return cmd in BYPASS_COMMANDS
-
-def _exec_passthrough():
-    try:
-        os.execvp(EXEC_TARGET, [EXEC_TARGET] + sys.argv[1:])
-    except Exception as e:
-        sys.stderr.write(f"[statusline] passthrough failed: {e}\\n")
-        sys.exit(1)
-
-def _is_sessions_command(argv):
-    for a in argv:
-        if a == "--":
-            return False
-        if a == "--sessions":
-            return True
-    return False
-
-def _run_sessions():
-    if SESSIONS_SCRIPT and os.path.exists(SESSIONS_SCRIPT):
-        os.execvp("node", ["node", SESSIONS_SCRIPT])
-    else:
-        sys.stderr.write("[statusline] sessions script not found\\n")
-        sys.exit(1)
-
-# Handle --sessions command
-if _is_sessions_command(sys.argv[1:]):
-    _run_sessions()
-
-# Passthrough for non-interactive/meta commands (avoid clearing screen / PTY proxy)
-if (not sys.stdin.isatty()) or (not sys.stdout.isatty()) or _should_passthrough(sys.argv[1:]):
-    _exec_passthrough()
-
-ANSI_RE = re.compile(r"\\x1b\\[[0-9;]*m")
-RESET_SGR = "\\x1b[0m"
-
-def _term_size():
-    try:
-        sz = os.get_terminal_size(sys.stdout.fileno())
-        return int(sz.lines), int(sz.columns)
-    except Exception:
-        return 24, 80
-
-def _set_winsize(fd: int, rows: int, cols: int) -> None:
-    try:
-        winsz = struct.pack("HHHH", max(1, rows), max(1, cols), 0, 0)
-        fcntl.ioctl(fd, termios.TIOCSWINSZ, winsz)
-    except Exception:
-        pass
-
-def _visible_width(text: str) -> int:
-    # Remove only SGR sequences; good enough for our generated segments.
-    stripped = ANSI_RE.sub("", text)
-    return len(stripped)
-
-def _clamp_ansi(text: str, cols: int) -> str:
-    if cols <= 0:
-        return text
-    # Avoid writing into the last column. Some terminals keep an implicit wrap-pending state
-    # when the last column is filled, and the next printable character can trigger a scroll.
-    cols = cols - 1 if cols > 1 else cols
-    if cols < 10:
-        return text
-    visible = 0
-    i = 0
-    out = []
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\x1b":
-            m = text.find("m", i)
-            if m != -1:
-                out.append(text[i : m + 1])
-                i = m + 1
-                continue
-            out.append(ch)
-            i += 1
-            continue
-        if visible >= cols:
-            break
-        out.append(ch)
-        i += 1
-        visible += 1
-    if i < len(text) and cols >= 1:
-        if visible >= cols:
-            if out:
-                out[-1] = "…"
-            else:
-                out.append("…")
-        else:
-            out.append("…")
-        out.append("\\x1b[0m")
-    return "".join(out)
-
-def _split_segments(text: str):
-    if not text:
-        return []
-    segments = []
-    start = 0
-    while True:
-        idx = text.find(RESET_SGR, start)
-        if idx == -1:
-            tail = text[start:]
-            if tail:
-                segments.append(tail)
-            break
-        seg = text[start : idx + len(RESET_SGR)]
-        if seg:
-            segments.append(seg)
-        start = idx + len(RESET_SGR)
-    return segments
-
-def _wrap_segments(segments, cols: int):
-    if not segments:
-        return [""]
-    if cols <= 0:
-        return ["".join(segments)]
-
-    lines = []
-    cur = []
-    cur_w = 0
-
-    for seg in segments:
-        seg_w = _visible_width(seg)
-        if seg_w <= 0:
-            continue
-
-        if not cur:
-            if seg_w > cols:
-                seg = _clamp_ansi(seg, cols)
-                seg_w = _visible_width(seg)
-            cur = [seg]
-            cur_w = seg_w
-            continue
-
-        if cur_w + seg_w <= cols:
-            cur.append(seg)
-            cur_w += seg_w
-        else:
-            lines.append("".join(cur))
-            if seg_w > cols:
-                seg = _clamp_ansi(seg, cols)
-                seg_w = _visible_width(seg)
-            cur = [seg]
-            cur_w = seg_w
-
-    if cur:
-        lines.append("".join(cur))
-
-    return lines if lines else [""]
-
-class StatusRenderer:
-    def __init__(self):
-        self._raw = ""
-        self._segments = []
-        self._lines = [""]
-        self._active_reserved_rows = RESERVED_ROWS
-        self._last_render_ms = 0
-        self._last_child_out_ms = 0
-        self._force_repaint = False
-        self._urgent = False
-        self._cursor_visible = True
-
-    def note_child_output(self):
-        self._last_child_out_ms = int(time.time() * 1000)
-
-    def set_cursor_visible(self, visible: bool):
-        self._cursor_visible = bool(visible)
-
-    def force_repaint(self, urgent: bool = False):
-        self._force_repaint = True
-        if urgent:
-            self._urgent = True
-
-    def set_active_reserved_rows(self, reserved_rows: int):
-        try:
-            self._active_reserved_rows = max(1, int(reserved_rows or 1))
-        except Exception:
-            self._active_reserved_rows = 1
-
-    def set_line(self, line: str):
-        if line != self._raw:
-            self._raw = line
-            self._segments = _split_segments(line)
-            self._force_repaint = True
-
-    def _write(self, b: bytes) -> None:
-        try:
-            os.write(sys.stdout.fileno(), b)
-        except Exception:
-            pass
-
-    def desired_reserved_rows(self, physical_rows: int, cols: int, min_reserved: int):
-        try:
-            rows = int(physical_rows or 24)
-        except Exception:
-            rows = 24
-        try:
-            cols = int(cols or 80)
-        except Exception:
-            cols = 80
-
-        max_reserved = max(1, rows - 4)
-        segments = self._segments if self._segments else ([self._raw] if self._raw else [])
-        lines = _wrap_segments(segments, cols) if segments else [""]
-
-        needed = min(len(lines), max_reserved)
-        desired = max(int(min_reserved or 1), needed)
-        desired = min(desired, max_reserved)
-
-        if len(lines) < desired:
-            lines = [""] * (desired - len(lines)) + lines
-        if len(lines) > desired:
-            lines = lines[-desired:]
-
-        self._lines = lines
-        return desired
-
-    def clear_reserved_area(
-        self,
-        physical_rows: int,
-        cols: int,
-        reserved_rows: int,
-        restore_row: int = 1,
-        restore_col: int = 1,
-    ):
-        try:
-            rows = int(physical_rows or 24)
-        except Exception:
-            rows = 24
-        try:
-            cols = int(cols or 80)
-        except Exception:
-            cols = 80
-        try:
-            reserved = max(1, int(reserved_rows or 1))
-        except Exception:
-            reserved = 1
-
-        reserved = min(reserved, rows)
-        start_row = rows - reserved + 1
-        parts = ["\\x1b[?2026h", "\\x1b[?25l", RESET_SGR]
-        for i in range(reserved):
-            parts.append(f"\\x1b[{start_row + i};1H\\x1b[2K")
-        parts.append(f"\\x1b[{restore_row};{restore_col}H")
-        parts.append("\\x1b[?25h" if self._cursor_visible else "\\x1b[?25l")
-        parts.append("\\x1b[?2026l")
-        self._write("".join(parts).encode("utf-8", "ignore"))
-
-    def render(self, physical_rows: int, cols: int, restore_row: int = 1, restore_col: int = 1) -> None:
-        now_ms = int(time.time() * 1000)
-        if not self._force_repaint:
-            return
-        if not self._raw:
-            self._force_repaint = False
-            self._urgent = False
-            return
-        if (not self._urgent) and (now_ms - self._last_render_ms < MIN_RENDER_INTERVAL_MS):
-            return
-        # Avoid repainting while child is actively writing (reduces flicker on macOS Terminal).
-        if (not self._urgent) and (QUIET_MS > 0 and now_ms - self._last_child_out_ms < QUIET_MS):
-            return
-
-        try:
-            rows = int(physical_rows or 24)
-        except Exception:
-            rows = 24
-        try:
-            cols = int(cols or 80)
-        except Exception:
-            cols = 80
-
-        if cols <= 0:
-            cols = 80
-
-        reserved = max(1, min(self._active_reserved_rows, max(1, rows - 4)))
-        start_row = rows - reserved + 1
-
-        lines = self._lines or [""]
-        if len(lines) < reserved:
-            lines = [""] * (reserved - len(lines)) + lines
-        if len(lines) > reserved:
-            lines = lines[-reserved:]
-
-        child_rows = rows - reserved
-
-        parts = ["\\x1b[?2026h", "\\x1b[?25l"]
-        # Always set scroll region to exclude statusline area
-        parts.append(f"\\x1b[1;{child_rows}r")
-        for i in range(reserved):
-            row = start_row + i
-            text = _clamp_ansi(lines[i], cols)
-            parts.append(f"\\x1b[{row};1H{RESET_SGR}\\x1b[2K")
-            parts.append(f"\\x1b[{row};1H{text}{RESET_SGR}")
-        parts.append(f"\\x1b[{restore_row};{restore_col}H")
-        parts.append("\\x1b[?25h" if self._cursor_visible else "\\x1b[?25l")
-        parts.append("\\x1b[?2026l")
-
-        self._write("".join(parts).encode("utf-8", "ignore"))
-        self._last_render_ms = now_ms
-        self._force_repaint = False
-        self._urgent = False
-
-    def clear(self):
-        r, c = _term_size()
-        self.clear_reserved_area(r, c, max(self._active_reserved_rows, RESERVED_ROWS))
-
-
-class OutputRewriter:
-    # Rewrite a small subset of ANSI cursor positioning commands to ensure the child UI never
-    # draws into the reserved statusline rows.
-    #
-    # Key idea: many TUIs use "ESC[999;1H" to jump to the terminal bottom. If we forward that
-    # unmodified, it targets the *physical* bottom row, overwriting our statusline. We clamp it
-    # to "max_row" (physical_rows - reserved_rows) so the child's "bottom" becomes the line
-    # just above the statusline.
-    def __init__(self):
-        self._buf = b""
-
-    def feed(self, chunk: bytes, max_row: int) -> bytes:
-        if not chunk:
-            return b""
-
-        data = self._buf + chunk
-        self._buf = b""
-        out = bytearray()
-        n = len(data)
-        i = 0
-
-        def _is_final_byte(v: int) -> bool:
-            return 0x40 <= v <= 0x7E
-
-        while i < n:
-            b = data[i]
-            if b != 0x1B:  # ESC
-                out.append(b)
-                i += 1
-                continue
-
-            if i + 1 >= n:
-                self._buf = data[i:]
-                break
-
-            nxt = data[i + 1]
-            if nxt != 0x5B:  # not CSI
-                out.append(b)
-                i += 1
-                continue
-
-            # CSI sequence: ESC [ ... <final>
-            j = i + 2
-            while j < n and not _is_final_byte(data[j]):
-                j += 1
-            if j >= n:
-                self._buf = data[i:]
-                break
-
-            final = data[j]
-            seq = data[i : j + 1]
-
-            if final in (ord("H"), ord("f")) and max_row > 0:
-                params = data[i + 2 : j]
-                try:
-                    s = params.decode("ascii", "ignore")
-                except Exception:
-                    s = ""
-
-                # Only handle the simple numeric form (no private/DEC prefixes like "?")
-                if not s or s[0] in "0123456789;":
-                    parts = s.split(";") if s else []
-                    try:
-                        row = int(parts[0]) if (len(parts) >= 1 and parts[0]) else 1
-                    except Exception:
-                        row = 1
-                    try:
-                        col = int(parts[1]) if (len(parts) >= 2 and parts[1]) else 1
-                    except Exception:
-                        col = 1
-
-                    if row == 999 or row > max_row:
-                        row = max_row
-                    if row < 1:
-                        row = 1
-                    if col < 1:
-                        col = 1
-
-                    new_params = f"{row};{col}".encode("ascii", "ignore")
-                    seq = b"\\x1b[" + new_params + bytes([final])
-
-            elif final == ord("r") and max_row > 0:
-                # DECSTBM - Set scrolling region. If the child resets to the full physical screen
-                # (e.g. ESC[r), the reserved statusline row becomes scrollable and our statusline
-                # will "float" upward when the UI scrolls. Clamp bottom to max_row (child area).
-                params = data[i + 2 : j]
-                try:
-                    s = params.decode("ascii", "ignore")
-                except Exception:
-                    s = ""
-
-                # Only handle the simple numeric form (no private/DEC prefixes like "?")
-                if not s or s[0] in "0123456789;":
-                    parts = s.split(";") if s else []
-                    try:
-                        top = int(parts[0]) if (len(parts) >= 1 and parts[0]) else 1
-                    except Exception:
-                        top = 1
-                    try:
-                        bottom = int(parts[1]) if (len(parts) >= 2 and parts[1]) else max_row
-                    except Exception:
-                        bottom = max_row
-
-                    if top <= 0:
-                        top = 1
-                    if bottom <= 0 or bottom == 999 or bottom > max_row:
-                        bottom = max_row
-                    if top > bottom:
-                        top = 1
-
-                    seq = f"\\x1b[{top};{bottom}r".encode("ascii", "ignore")
-
-            out.extend(seq)
-            i = j + 1
-
-        return bytes(out)
-
-
-class CursorTracker:
-    # Best-effort cursor tracking so the wrapper can restore the cursor position without using
-    # ESC7/ESC8 (which droid/Ink also uses internally).
-    def __init__(self):
-        self.row = 1
-        self.col = 1
-        self._saved_row = 1
-        self._saved_col = 1
-        self._buf = b""
-        self._in_osc = False
-        self._utf8_cont = 0
-        self._wrap_pending = False
-
-    def position(self):
-        return self.row, self.col
-
-    def feed(self, chunk: bytes, max_row: int, max_col: int) -> None:
-        if not chunk:
-            return
-        try:
-            max_row = max(1, int(max_row or 1))
-        except Exception:
-            max_row = 1
-        try:
-            max_col = max(1, int(max_col or 1))
-        except Exception:
-            max_col = 1
-
-        data = self._buf + chunk
-        self._buf = b""
-        n = len(data)
-        i = 0
-
-        def _clamp():
-            if self.row < 1:
-                self.row = 1
-            elif self.row > max_row:
-                self.row = max_row
-            if self.col < 1:
-                self.col = 1
-            elif self.col > max_col:
-                self.col = max_col
-
-        def _parse_int(v: str, default: int) -> int:
-            try:
-                return int(v) if v else default
-            except Exception:
-                return default
-
-        while i < n:
-            b = data[i]
-
-            if self._in_osc:
-                # OSC/DCS/etc are terminated by BEL or ST (ESC \\).
-                if b == 0x07:
-                    self._in_osc = False
-                    i += 1
-                    continue
-                if b == 0x1B:
-                    if i + 1 >= n:
-                        self._buf = data[i:]
-                        break
-                    if data[i + 1] == 0x5C:
-                        self._in_osc = False
-                        i += 2
-                        continue
-                i += 1
-                continue
-
-            if self._utf8_cont > 0:
-                if 0x80 <= b <= 0xBF:
-                    self._utf8_cont -= 1
-                    i += 1
-                    continue
-                self._utf8_cont = 0
-
-            if b == 0x1B:  # ESC
-                self._wrap_pending = False
-                if i + 1 >= n:
-                    self._buf = data[i:]
-                    break
-                nxt = data[i + 1]
-
-                if nxt == 0x5B:  # CSI
-                    j = i + 2
-                    while j < n and not (0x40 <= data[j] <= 0x7E):
-                        j += 1
-                    if j >= n:
-                        self._buf = data[i:]
-                        break
-                    final = data[j]
-                    params = data[i + 2 : j]
-                    try:
-                        s = params.decode("ascii", "ignore")
-                    except Exception:
-                        s = ""
-
-                    if s and s[0] not in "0123456789;":
-                        i = j + 1
-                        continue
-
-                    parts = s.split(";") if s else []
-                    p0 = _parse_int(parts[0] if len(parts) >= 1 else "", 1)
-                    p1 = _parse_int(parts[1] if len(parts) >= 2 else "", 1)
-
-                    if final in (ord("H"), ord("f")):
-                        self.row = p0
-                        self.col = p1
-                        _clamp()
-                    elif final == ord("A"):
-                        self.row = max(1, self.row - p0)
-                    elif final == ord("B"):
-                        self.row = min(max_row, self.row + p0)
-                    elif final == ord("C"):
-                        self.col = min(max_col, self.col + p0)
-                    elif final == ord("D"):
-                        self.col = max(1, self.col - p0)
-                    elif final == ord("E"):
-                        self.row = min(max_row, self.row + p0)
-                        self.col = 1
-                    elif final == ord("F"):
-                        self.row = max(1, self.row - p0)
-                        self.col = 1
-                    elif final == ord("G"):
-                        self.col = p0
-                        _clamp()
-                    elif final == ord("d"):
-                        self.row = p0
-                        _clamp()
-                    elif final == ord("r"):
-                        # DECSTBM moves the cursor to the home position.
-                        self.row = 1
-                        self.col = 1
-                    elif final == ord("s"):
-                        self._saved_row = self.row
-                        self._saved_col = self.col
-                    elif final == ord("u"):
-                        self.row = self._saved_row
-                        self.col = self._saved_col
-                        _clamp()
-
-                    i = j + 1
-                    continue
-
-                # OSC, DCS, PM, APC, SOS (terminated by ST or BEL).
-                if nxt == 0x5D or nxt in (0x50, 0x5E, 0x5F, 0x58):
-                    self._in_osc = True
-                    i += 2
-                    continue
-
-                # DECSC / DECRC
-                if nxt == 0x37:
-                    self._saved_row = self.row
-                    self._saved_col = self.col
-                    i += 2
-                    continue
-                if nxt == 0x38:
-                    self.row = self._saved_row
-                    self.col = self._saved_col
-                    _clamp()
-                    i += 2
-                    continue
-
-                # Other single-escape sequences (ignore).
-                i += 2
-                continue
-
-            if b == 0x0D:  # CR
-                self.col = 1
-                self._wrap_pending = False
-                i += 1
-                continue
-            if b in (0x0A, 0x0B, 0x0C):  # LF/VT/FF
-                self.row = min(max_row, self.row + 1)
-                self._wrap_pending = False
-                i += 1
-                continue
-            if b == 0x08:  # BS
-                self.col = max(1, self.col - 1)
-                self._wrap_pending = False
-                i += 1
-                continue
-            if b == 0x09:  # TAB
-                next_stop = ((self.col - 1) // 8 + 1) * 8 + 1
-                self.col = min(max_col, next_stop)
-                self._wrap_pending = False
-                i += 1
-                continue
-
-            if b < 0x20 or b == 0x7F:
-                i += 1
-                continue
-
-            # Printable characters.
-            if self._wrap_pending:
-                self.row = min(max_row, self.row + 1)
-                self.col = 1
-                self._wrap_pending = False
-
-            if b >= 0x80:
-                if (b & 0xE0) == 0xC0:
-                    self._utf8_cont = 1
-                elif (b & 0xF0) == 0xE0:
-                    self._utf8_cont = 2
-                elif (b & 0xF8) == 0xF0:
-                    self._utf8_cont = 3
-                else:
-                    self._utf8_cont = 0
-
-            if self.col < max_col:
-                self.col += 1
-            else:
-                self.col = max_col
-                self._wrap_pending = True
-
-            i += 1
-
-
-def main():
-    # Start from a clean viewport. Droid's TUI assumes a fresh screen; without this,
-    # it can visually mix with prior shell output (especially when scrollback exists).
-    try:
-        os.write(sys.stdout.fileno(), b"\\x1b[?2026h\\x1b[0m\\x1b[r\\x1b[2J\\x1b[H\\x1b[?2026l")
-    except Exception:
-        pass
-
-    renderer = StatusRenderer()
-    renderer.set_line("\\x1b[48;5;238m\\x1b[38;5;15m Statusline: starting… \\x1b[0m")
-    renderer.force_repaint(True)
-
-    physical_rows, physical_cols = _term_size()
-    effective_reserved_rows = renderer.desired_reserved_rows(physical_rows, physical_cols, RESERVED_ROWS)
-    renderer.set_active_reserved_rows(effective_reserved_rows)
-
-    child_rows = max(4, physical_rows - effective_reserved_rows)
-    child_cols = max(10, physical_cols)
-
-    # Reserve the bottom rows up-front, before the child starts writing.
-    try:
-        seq = f"\\x1b[?2026h\\x1b[?25l\\x1b[1;{child_rows}r\\x1b[1;1H\\x1b[?25h\\x1b[?2026l"
-        os.write(sys.stdout.fileno(), seq.encode("utf-8", "ignore"))
-    except Exception:
-        pass
-    renderer.force_repaint(True)
-    renderer.render(physical_rows, physical_cols)
-
-    master_fd, slave_fd = pty.openpty()
-    _set_winsize(slave_fd, child_rows, child_cols)
-
-    child = subprocess.Popen(
-        [EXEC_TARGET] + sys.argv[1:],
-        stdin=slave_fd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        close_fds=True,
-        start_new_session=True,
-    )
-    os.close(slave_fd)
-
-    rewriter = OutputRewriter()
-    cursor = CursorTracker()
-
-    monitor = None
-    try:
-        monitor_env = os.environ.copy()
-        try:
-            monitor_env["DROID_STATUSLINE_PGID"] = str(os.getpgid(child.pid))
-        except Exception:
-            monitor_env["DROID_STATUSLINE_PGID"] = str(child.pid)
-        monitor = subprocess.Popen(
-            ["node", STATUSLINE_MONITOR] + sys.argv[1:],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-            bufsize=0,
-            env=monitor_env,
-        )
-    except Exception:
-        monitor = None
-
-    monitor_fd = monitor.stdout.fileno() if (monitor and monitor.stdout) else None
-
-    def forward(sig, _frame):
-        try:
-            os.killpg(child.pid, sig)
-        except Exception:
-            pass
-
-    for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        try:
-            signal.signal(s, forward)
-        except Exception:
-            pass
-
-    stdin_fd = sys.stdin.fileno()
-    stdout_fd = sys.stdout.fileno()
-    old_tty = termios.tcgetattr(stdin_fd)
-    try:
-        tty.setraw(stdin_fd)
-        # Ensure stdout is blocking (prevents sporadic EAGAIN/BlockingIOError on some terminals).
-        try:
-            os.set_blocking(stdout_fd, True)
-        except Exception:
-            pass
-        os.set_blocking(stdin_fd, False)
-        os.set_blocking(master_fd, False)
-        if monitor_fd is not None:
-            os.set_blocking(monitor_fd, False)
-
-        monitor_buf = b""
-        detect_buf = b""
-        cursor_visible = True
-        last_physical_rows = 0
-        last_physical_cols = 0
-        scroll_region_dirty = True
-        last_force_repaint_ms = int(time.time() * 1000)
-
-        while True:
-            if child.poll() is not None:
-                break
-
-            read_fds = [master_fd, stdin_fd]
-            if monitor_fd is not None:
-                read_fds.append(monitor_fd)
-
-            try:
-                rlist, _, _ = select.select(read_fds, [], [], 0.05)
-            except InterruptedError:
-                rlist = []
-
-            pty_eof = False
-            for fd in rlist:
-                if fd == stdin_fd:
-                    try:
-                        data = os.read(stdin_fd, 4096)
-                        if data:
-                            os.write(master_fd, data)
-                    except BlockingIOError:
-                        pass
-                    except OSError:
-                        pass
-                elif fd == master_fd:
-                    try:
-                        data = os.read(master_fd, 65536)
-                    except BlockingIOError:
-                        data = b""
-                    except OSError:
-                        data = b""
-
-                    if data:
-                        detect_buf = (detect_buf + data)[-128:]
-                        # Detect sequences that may affect scroll region or clear screen
-                        needs_scroll_region_reset = (
-                            (b"\\x1b[?1049" in detect_buf)  # Alt screen
-                            or (b"\\x1b[?1047" in detect_buf)  # Alt screen
-                            or (b"\\x1b[?47" in detect_buf)  # Alt screen
-                            or (b"\\x1b[J" in detect_buf)  # Clear below
-                            or (b"\\x1b[0J" in detect_buf)  # Clear below
-                            or (b"\\x1b[1J" in detect_buf)  # Clear above
-                            or (b"\\x1b[2J" in detect_buf)  # Clear all
-                            or (b"\\x1b[3J" in detect_buf)  # Clear scrollback
-                            or (b"\\x1b[r" in detect_buf)  # Reset scroll region (bare ESC[r)
-                        )
-                        # Also detect scroll region changes with parameters (DECSTBM pattern ESC[n;mr)
-                        if b"\\x1b[" in detect_buf and b"r" in detect_buf:
-                            if re.search(b"\\x1b\\\\[[0-9]*;?[0-9]*r", detect_buf):
-                                needs_scroll_region_reset = True
-                        if needs_scroll_region_reset:
-                            renderer.force_repaint(True)
-                            scroll_region_dirty = True
-                        h = detect_buf.rfind(b"\\x1b[?25h")
-                        l = detect_buf.rfind(b"\\x1b[?25l")
-                        if h != -1 or l != -1:
-                            cursor_visible = h > l
-                            renderer.set_cursor_visible(cursor_visible)
-                        renderer.note_child_output()
-                        data = rewriter.feed(data, child_rows)
-                        cursor.feed(data, child_rows, child_cols)
-                        try:
-                            os.write(stdout_fd, data)
-                        except BlockingIOError:
-                            # If stdout is non-blocking for some reason, retry briefly.
-                            try:
-                                time.sleep(0.01)
-                                os.write(stdout_fd, data)
-                            except Exception:
-                                pass
-                        except OSError:
-                            pass
-                    else:
-                        pty_eof = True
-                elif monitor_fd is not None and fd == monitor_fd:
-                    try:
-                        chunk = os.read(monitor_fd, 65536)
-                    except BlockingIOError:
-                        chunk = b""
-                    except OSError:
-                        chunk = b""
-
-                    if chunk:
-                        monitor_buf += chunk
-                        while True:
-                            nl = monitor_buf.find(b"\\n")
-                            if nl == -1:
-                                break
-                            raw = monitor_buf[:nl].rstrip(b"\\r")
-                            monitor_buf = monitor_buf[nl + 1 :]
-                            if not raw:
-                                continue
-                            renderer.set_line(raw.decode("utf-8", "replace"))
-                    else:
-                        monitor_fd = None
-
-            if pty_eof:
-                break
-
-            physical_rows, physical_cols = _term_size()
-            size_changed = (physical_rows != last_physical_rows) or (physical_cols != last_physical_cols)
-
-            desired = renderer.desired_reserved_rows(physical_rows, physical_cols, RESERVED_ROWS)
-            if size_changed or (desired != effective_reserved_rows):
-                cr, cc = cursor.position()
-                if desired < effective_reserved_rows:
-                    renderer.clear_reserved_area(physical_rows, physical_cols, effective_reserved_rows, cr, cc)
-
-                effective_reserved_rows = desired
-                renderer.set_active_reserved_rows(effective_reserved_rows)
-
-                child_rows = max(4, physical_rows - effective_reserved_rows)
-                child_cols = max(10, physical_cols)
-                _set_winsize(master_fd, child_rows, child_cols)
-                try:
-                    os.killpg(child.pid, signal.SIGWINCH)
-                except Exception:
-                    pass
-
-                scroll_region_dirty = True
-                renderer.force_repaint(urgent=True)  # Use urgent mode to ensure immediate repaint
-                last_physical_rows = physical_rows
-                last_physical_cols = physical_cols
-
-            cr, cc = cursor.position()
-            if cr < 1:
-                cr = 1
-            if cc < 1:
-                cc = 1
-            if cr > child_rows:
-                cr = child_rows
-            if cc > child_cols:
-                cc = child_cols
-
-            if scroll_region_dirty:
-                # Keep the reserved rows out of the terminal scroll region (esp. after resize).
-                try:
-                    seq = f"\\x1b[?2026h\\x1b[?25l\\x1b[1;{child_rows}r\\x1b[{cr};{cc}H"
-                    seq += "\\x1b[?25h" if cursor_visible else "\\x1b[?25l"
-                    seq += "\\x1b[?2026l"
-                    os.write(stdout_fd, seq.encode("utf-8", "ignore"))
-                except Exception:
-                    pass
-                scroll_region_dirty = False
-
-            # Periodic force repaint to ensure statusline doesn't disappear
-            now_ms = int(time.time() * 1000)
-            if now_ms - last_force_repaint_ms >= FORCE_REPAINT_INTERVAL_MS:
-                renderer.force_repaint(False)
-                last_force_repaint_ms = now_ms
-
-            renderer.render(physical_rows, physical_cols, cr, cc)
-
-    finally:
-        try:
-            termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_tty)
-        except Exception:
-            pass
-        try:
-            renderer.clear()
-        except Exception:
-            pass
-        try:
-            # Restore terminal scroll region and attributes.
-            os.write(stdout_fd, b"\\x1b[r\\x1b[0m\\x1b[?25h")
-        except Exception:
-            pass
-        try:
-            os.close(master_fd)
-        except Exception:
-            pass
-        if monitor is not None:
-            try:
-                monitor.terminate()
-            except Exception:
-                pass
-
-    sys.exit(child.returncode or 0)
-
-
-if __name__ == "__main__":
-    main()
-`;
-*/
 }
 
 function generateStatuslineWrapperScriptBun(
@@ -2620,12 +1811,7 @@ async function main() {
   }
 
   function includesScrollRegionCSI() {
-    // Equivalent to Python: re.search(b"\\x1b\\\\[[0-9]*;?[0-9]*r", detect_buf)
-    try {
-      return /\\x1b\\[[0-9]*;?[0-9]*r/.test(detectStr);
-    } catch {
-      return false;
-    }
+    return /\\x1b\\[[0-9]*;?[0-9]*r/.test(detectStr);
   }
 
   function updateCursorVisibility() {
