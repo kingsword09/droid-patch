@@ -48,6 +48,8 @@ export interface AliasMetadata {
     noTelemetry?: boolean;
     /** Standalone mode: mock non-LLM Factory APIs */
     standalone?: boolean;
+    /** Hardcode autonomy mode to auto-high */
+    autoHigh?: boolean;
   };
 }
 
@@ -180,5 +182,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.noTelemetry) applied.push("noTelemetry");
   if (patches.standalone) applied.push("standalone");
   if (patches.statusline) applied.push("statusline");
+  if (patches.autoHigh) applied.push("autoHigh");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }
