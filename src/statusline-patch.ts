@@ -486,12 +486,18 @@ function buildLine(params) {
     lastOutputTokens,
     sessionUsage,
     compacting,
+    ctxAvailable,
+    ctxApprox,
+    ctxOverflow,
   } = params;
 
-  let ctxPart = 'Ctx: ' + formatTokens(usedTokens);
+  const ctxValue = !ctxAvailable
+    ? '--'
+    : (ctxApprox ? '~' : '') + formatTokens(usedTokens) + (ctxOverflow ? '+' : '');
+  let ctxPart = 'Ctx: ' + ctxValue;
 
   const cachePart =
-    cacheRead > 0 || deltaInput > 0
+    ctxAvailable && !ctxApprox && !ctxOverflow && (cacheRead > 0 || deltaInput > 0)
       ? ' c' + formatTokens(cacheRead) + '+n' + formatTokens(deltaInput)
       : '';
 
@@ -592,10 +598,18 @@ async function main() {
   let globalSettingsMtimeMs = safeStatMtimeMs(GLOBAL_SETTINGS_PATH);
   let globalSettingsModel = resolveGlobalSettingsModel();
 
-  let modelId =
-    (sessionSettings && typeof sessionSettings.model === 'string' ? sessionSettings.model : null) ||
-    globalSettingsModel ||
-    null;
+  let modelIdFromLog = null;
+
+  function resolveActiveModelId() {
+    const fromSession =
+      sessionSettings && typeof sessionSettings.model === 'string' ? sessionSettings.model : null;
+    if (fromSession && String(fromSession).startsWith('custom:')) return fromSession;
+    const fromLog = typeof modelIdFromLog === 'string' ? modelIdFromLog : null;
+    if (fromLog) return fromLog;
+    return fromSession || globalSettingsModel || null;
+  }
+
+  let modelId = resolveActiveModelId();
 
   let provider =
     sessionSettings && typeof sessionSettings.providerLock === 'string'
@@ -604,10 +618,7 @@ async function main() {
   let underlyingModel = resolveUnderlyingModelId(modelId, factoryConfig) || modelId || 'unknown';
 
   function refreshModel() {
-    const nextModelId =
-      (sessionSettings && typeof sessionSettings.model === 'string' ? sessionSettings.model : null) ||
-      globalSettingsModel ||
-      null;
+    const nextModelId = resolveActiveModelId();
 
     // Use providerLock if set, otherwise resolve from model/config (same logic as initialization)
     const nextProvider =
@@ -644,9 +655,22 @@ async function main() {
   let gitBranch = '';
   let gitDiff = '';
   let lastContextMs = 0;
+  let ctxAvailable = false;
+  let ctxApprox = false;
+  let ctxOverflow = false;
+  let ctxOverrideUsedTokens = null;
+
+  let baselineCacheReadInputTokens = 0;
+  let knownContextMaxTokens = 0;
+  let pendingCompactionSuffixTokens = null;
+  let pendingCompactionSummaryOutputTokens = null;
+  let pendingCompactionSummaryTsMs = null;
 
   function renderNow() {
-    const usedTokens = (last.cacheReadInputTokens || 0) + (last.contextCount || 0);
+    const override = Number.isFinite(ctxOverrideUsedTokens) && ctxOverrideUsedTokens > 0 ? ctxOverrideUsedTokens : null;
+    const usedTokens = override != null ? override : (last.cacheReadInputTokens || 0) + (last.contextCount || 0);
+    const cacheRead = override != null ? 0 : last.cacheReadInputTokens || 0;
+    const deltaInput = override != null ? 0 : last.contextCount || 0;
     const line = buildLine({
       provider,
       model: underlyingModel,
@@ -654,11 +678,14 @@ async function main() {
       gitBranch,
       gitDiff,
       usedTokens,
-      cacheRead: last.cacheReadInputTokens || 0,
-      deltaInput: last.contextCount || 0,
+      cacheRead,
+      deltaInput,
       lastOutputTokens: last.outputTokens || 0,
       sessionUsage,
       compacting,
+      ctxAvailable: override != null ? true : ctxAvailable,
+      ctxApprox,
+      ctxOverflow,
     });
     if (line !== lastRenderedLine) {
       lastRenderedLine = line;
@@ -678,8 +705,22 @@ async function main() {
     } catch {}
   }, 0).unref();
 
+  // Seed known context max tokens from recent log failures (some providers omit explicit counts).
+  setTimeout(() => {
+    try {
+      seedKnownContextMaxTokensFromLog(8 * 1024 * 1024);
+    } catch {}
+  }, 0).unref();
+
   let reseedInProgress = false;
   let reseedQueued = false;
+
+  function extractModelIdFromContext(ctx) {
+    const tagged = ctx?.tags?.modelId;
+    if (typeof tagged === 'string') return tagged;
+    const direct = ctx?.modelId;
+    return typeof direct === 'string' ? direct : null;
+  }
 
   function updateLastFromContext(ctx, updateOutputTokens, tsMs) {
     const ts = Number.isFinite(tsMs) ? tsMs : null;
@@ -687,11 +728,250 @@ async function main() {
     const cacheRead = Number(ctx?.cacheReadInputTokens);
     const contextCount = Number(ctx?.contextCount);
     const out = Number(ctx?.outputTokens);
-    if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
-    if (Number.isFinite(contextCount)) last.contextCount = contextCount;
+    const hasTokens =
+      (Number.isFinite(cacheRead) && cacheRead > 0) ||
+      (Number.isFinite(contextCount) && contextCount > 0);
+    if (hasTokens) {
+      // Treat 0/0 as "not reported" (some providers log zeros even when prompt exists).
+      // If at least one field is >0, accept both fields (including zero) as reliable.
+      if (Number.isFinite(cacheRead)) last.cacheReadInputTokens = cacheRead;
+      if (Number.isFinite(contextCount)) last.contextCount = contextCount;
+      ctxAvailable = true;
+      ctxOverrideUsedTokens = null;
+      ctxApprox = false;
+      ctxOverflow = false;
+      if (Number.isFinite(cacheRead) && cacheRead > 0) {
+        baselineCacheReadInputTokens = baselineCacheReadInputTokens
+          ? Math.min(baselineCacheReadInputTokens, cacheRead)
+          : cacheRead;
+      }
+    }
     if (updateOutputTokens && Number.isFinite(out)) last.outputTokens = out;
-    if (ts != null) lastContextMs = ts;
+    if (hasTokens && ts != null) lastContextMs = ts;
+
+    const nextModelIdFromLog = extractModelIdFromContext(ctx);
+    if (nextModelIdFromLog && nextModelIdFromLog !== modelIdFromLog) {
+      modelIdFromLog = nextModelIdFromLog;
+      refreshModel();
+    }
+
     return true;
+  }
+
+  function setCtxOverride(usedTokens, options) {
+    const opts = options || {};
+    const v = Number(usedTokens);
+    if (!Number.isFinite(v) || v <= 0) return false;
+    const prevUsed = ctxOverrideUsedTokens;
+    const prevApprox = ctxApprox;
+    const prevOverflow = ctxOverflow;
+    ctxOverrideUsedTokens = v;
+    ctxAvailable = true;
+    ctxApprox = !!opts.approx;
+    ctxOverflow = !!opts.overflow;
+    const ts = Number.isFinite(opts.tsMs) ? opts.tsMs : null;
+    if (ts != null && (!lastContextMs || ts > lastContextMs)) lastContextMs = ts;
+    if (prevUsed !== ctxOverrideUsedTokens || prevApprox !== ctxApprox || prevOverflow !== ctxOverflow) {
+      renderNow();
+    }
+    return true;
+  }
+
+  function parseContextLimitFromMessage(message) {
+    const s = String(message || '');
+    let promptTokens = null;
+    let maxTokens = null;
+
+    const pair = s.match(/(\\d+)\\s*tokens\\s*>\\s*(\\d+)\\s*maximum/i);
+    if (pair) {
+      const prompt = Number(pair[1]);
+      const max = Number(pair[2]);
+      if (Number.isFinite(prompt)) promptTokens = prompt;
+      if (Number.isFinite(max)) maxTokens = max;
+      return { promptTokens, maxTokens };
+    }
+
+    const promptMatch = s.match(/prompt\\s+is\\s+too\\s+long:\\s*(\\d+)\\s*tokens/i);
+    if (promptMatch) {
+      const prompt = Number(promptMatch[1]);
+      if (Number.isFinite(prompt)) promptTokens = prompt;
+    }
+
+    const maxMatch = s.match(/>\\s*(\\d+)\\s*maximum/i);
+    if (maxMatch) {
+      const max = Number(maxMatch[1]);
+      if (Number.isFinite(max)) maxTokens = max;
+    }
+
+    return { promptTokens, maxTokens };
+  }
+
+  function seedKnownContextMaxTokensFromLog(maxScanBytes = 4 * 1024 * 1024) {
+    try {
+      const stat = fs.statSync(LOG_PATH);
+      const size = Number(stat?.size ?? 0);
+      if (!(size > 0)) return;
+
+      const scan = Math.max(256 * 1024, maxScanBytes);
+      const readSize = Math.min(size, scan);
+      const start = Math.max(0, size - readSize);
+
+      const buf = Buffer.alloc(readSize);
+      const fd = fs.openSync(LOG_PATH, 'r');
+      try {
+        fs.readSync(fd, buf, 0, readSize, start);
+      } finally {
+        try {
+          fs.closeSync(fd);
+        } catch {}
+      }
+
+      const text = buf.toString('utf8');
+      const re = /(\\d+)\\s*tokens\\s*>\\s*(\\d+)\\s*maximum/gi;
+      let m;
+      while ((m = re.exec(text))) {
+        const max = Number(m[2]);
+        if (Number.isFinite(max) && max > 0) knownContextMaxTokens = max;
+      }
+    } catch {}
+  }
+
+  function maybeUpdateCtxFromContextLimitFailure(line, ctx, tsMs) {
+    if (!line || !ctx) return false;
+    if (!String(line).includes('[Chat route failure]')) return false;
+    const reason = ctx?.reason;
+    if (reason !== 'llmContextExceeded') return false;
+
+    const msg = ctx?.error?.message;
+    if (typeof msg !== 'string' || !msg) return false;
+    const parsed = parseContextLimitFromMessage(msg);
+    const max = Number(parsed?.maxTokens);
+    if (Number.isFinite(max) && max > 0) knownContextMaxTokens = max;
+
+    const prompt = Number(parsed?.promptTokens);
+    if (Number.isFinite(prompt) && prompt > 0) {
+      return setCtxOverride(prompt, { tsMs, approx: false, overflow: false });
+    }
+
+    if (Number.isFinite(max) && max > 0) {
+      return setCtxOverride(max, { tsMs, approx: false, overflow: true });
+    }
+
+    if (knownContextMaxTokens > 0) {
+      return setCtxOverride(knownContextMaxTokens, { tsMs, approx: false, overflow: true });
+    }
+
+    return false;
+  }
+
+  function maybeCaptureCompactionSuffix(line, ctx) {
+    if (!line || !ctx) return;
+    if (!String(line).includes('[Compaction] Suffix selection')) return;
+    const suffix = Number(ctx?.suffixTokens);
+    if (Number.isFinite(suffix) && suffix >= 0) pendingCompactionSuffixTokens = suffix;
+  }
+
+  function maybeApplyPostCompactionEstimate(line, ctx, tsMs) {
+    if (!line || !ctx) return false;
+	    if (!String(line).includes('[Compaction] End')) return false;
+	    if (ctx?.eventType !== 'compaction' || ctx?.state !== 'end') return false;
+	    const reason = ctx?.reason || ctx?.tags?.compactionReason || null;
+	    if (!(reason === 'context_limit' || reason === 'manual')) return false;
+
+    const summaryOut = Number(ctx?.summaryOutputTokens);
+    if (!Number.isFinite(summaryOut) || summaryOut < 0) return false;
+
+    const prefix = baselineCacheReadInputTokens > 0 ? baselineCacheReadInputTokens : 0;
+    const suffix = Number.isFinite(pendingCompactionSuffixTokens) ? pendingCompactionSuffixTokens : 0;
+    pendingCompactionSuffixTokens = null;
+
+    const est = prefix + suffix + summaryOut;
+    if (est <= 0) return false;
+    return setCtxOverride(est, { tsMs, approx: true, overflow: false });
+  }
+
+  function maybeApplyCompactSessionEstimate(sessionIdToEstimate, options, attempt = 0) {
+    const opts = options && typeof options === 'object' ? options : {};
+    const id = String(sessionIdToEstimate || '');
+    if (!isUuid(id)) return;
+    if (!workspaceDir) return;
+
+    // forceApply allows overriding even if ctx is already set (useful for manual /compress)
+    const forceApply = !!opts?.forceApply;
+    if (!forceApply) {
+      if (ctxAvailable) return;
+      if (Number.isFinite(ctxOverrideUsedTokens) && ctxOverrideUsedTokens > 0) return;
+    }
+
+    const suffixVal = opts?.suffixTokens;
+    const suffixTokens =
+      typeof suffixVal === 'number' && Number.isFinite(suffixVal) && suffixVal >= 0 ? suffixVal : 0;
+    const tsVal = opts?.tsMs;
+    const ts = typeof tsVal === 'number' && Number.isFinite(tsVal) ? tsVal : null;
+
+    const jsonlPath = path.join(workspaceDir, id + '.jsonl');
+    let head = null;
+    try {
+      const fd = fs.openSync(jsonlPath, 'r');
+      try {
+        const maxBytes = 2 * 1024 * 1024;
+        const buf = Buffer.alloc(maxBytes);
+        const bytes = fs.readSync(fd, buf, 0, maxBytes, 0);
+        head = buf.slice(0, Math.max(0, bytes)).toString('utf8');
+      } finally {
+        try {
+          fs.closeSync(fd);
+        } catch {}
+      }
+    } catch {
+      head = null;
+    }
+
+    if (!head) {
+      if (attempt < 40) {
+        setTimeout(() => {
+          maybeApplyCompactSessionEstimate(id, opts, attempt + 1);
+        }, 150).unref();
+      }
+      return;
+    }
+
+    let summaryText = null;
+    for (const raw of head.split('\\n')) {
+      if (!raw) continue;
+      let obj;
+      try {
+        obj = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (obj && obj.type === 'compaction_state' && typeof obj.summaryText === 'string') {
+        summaryText = obj.summaryText;
+        break;
+      }
+    }
+    if (!summaryText) {
+      if (attempt < 40) {
+        setTimeout(() => {
+          maybeApplyCompactSessionEstimate(id, opts, attempt + 1);
+        }, 150).unref();
+      }
+      return;
+    }
+
+    // Rough token estimate (no tokenizer deps): English-like text averages ~4 chars/token.
+    // Non-ASCII tends to be denser; use a smaller divisor.
+    let ascii = 0;
+    let other = 0;
+    for (let i = 0; i < summaryText.length; i++) {
+      const code = summaryText.charCodeAt(i);
+      if (code <= 0x7f) ascii += 1;
+      else other += 1;
+    }
+    const summaryTokens = Math.max(1, Math.ceil(ascii / 4 + other / 1.5));
+    const prefix = baselineCacheReadInputTokens > 0 ? baselineCacheReadInputTokens : 0;
+    const est = prefix + suffixTokens + summaryTokens;
+    if (est > 0) setCtxOverride(est, { tsMs: ts, approx: true, overflow: false });
   }
 
   function seedLastContextFromLog(options) {
@@ -899,9 +1179,17 @@ async function main() {
     // Reset cached state for the new session.
     last = { cacheReadInputTokens: 0, contextCount: 0, outputTokens: 0 };
     lastContextMs = 0;
-    compacting = false;
-    settingsMtimeMs = 0;
-    lastCtxPollMs = 0;
+    ctxAvailable = false;
+    ctxApprox = false;
+	    ctxOverflow = false;
+	    ctxOverrideUsedTokens = null;
+	    pendingCompactionSuffixTokens = null;
+	    pendingCompactionSummaryOutputTokens = null;
+	    pendingCompactionSummaryTsMs = null;
+	    modelIdFromLog = null;
+	    compacting = false;
+	    settingsMtimeMs = 0;
+	    lastCtxPollMs = 0;
 
     refreshModel();
     renderNow();
@@ -924,29 +1212,81 @@ async function main() {
       const line = buffer.slice(0, idx).trimEnd();
       buffer = buffer.slice(idx + 1);
 
-      const tsMs = parseLineTimestampMs(line);
-      const lineSessionId = extractSessionIdFromLine(line);
-      const isSessionLine =
-        lineSessionId && String(lineSessionId).toLowerCase() === sessionIdLower;
+	      const tsMs = parseLineTimestampMs(line);
+	      const lineSessionId = extractSessionIdFromLine(line);
+	      const isSessionLine =
+	        lineSessionId && String(lineSessionId).toLowerCase() === sessionIdLower;
 
-      // /compress (aka /compact) can create a new session ID. Follow it so ctx/model keep updating.
-      if (line.includes('oldSessionId') && line.includes('newSessionId') && line.includes('Context:')) {
-        const ctxIndex = line.indexOf('Context: ');
-        if (ctxIndex !== -1) {
+	      if (compacting && line.includes('[Compaction] End') && line.includes('Context:')) {
+	        const ctxIndex = line.indexOf('Context: ');
+	        if (ctxIndex !== -1) {
+	          const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
+	          try {
+	            const meta = JSON.parse(jsonStr);
+	            const summaryOut = Number(meta?.summaryOutputTokens);
+	            if (
+	              meta?.eventType === 'compaction' &&
+	              meta?.state === 'end' &&
+	              Number.isFinite(summaryOut) &&
+	              summaryOut >= 0
+	            ) {
+	              pendingCompactionSummaryOutputTokens = summaryOut;
+	              if (tsMs != null) pendingCompactionSummaryTsMs = tsMs;
+	            }
+	          } catch {
+	          }
+	        }
+	      }
+
+	      // /compress (aka /compact) can create a new session ID. Follow it so ctx/model keep updating.
+	      if (line.includes('oldSessionId') && line.includes('newSessionId') && line.includes('Context:')) {
+	        const ctxIndex = line.indexOf('Context: ');
+	        if (ctxIndex !== -1) {
           const jsonStr = line.slice(ctxIndex + 'Context: '.length).trim();
           try {
             const meta = JSON.parse(jsonStr);
             const oldId = meta?.oldSessionId;
             const newId = meta?.newSessionId;
-            if (
-              isUuid(oldId) &&
-              isUuid(newId) &&
-              String(oldId).toLowerCase() === sessionIdLower &&
-              String(newId).toLowerCase() !== sessionIdLower
-            ) {
-              switchToSession(String(newId));
-              continue;
-            }
+	            if (
+	              isUuid(oldId) &&
+	              isUuid(newId) &&
+	              String(oldId).toLowerCase() === sessionIdLower &&
+	              String(newId).toLowerCase() !== sessionIdLower
+	            ) {
+	              const suffixTokens = Number.isFinite(pendingCompactionSuffixTokens)
+	                ? pendingCompactionSuffixTokens
+	                : 0;
+	              const summaryOutTokens = Number.isFinite(pendingCompactionSummaryOutputTokens)
+	                ? pendingCompactionSummaryOutputTokens
+	                : null;
+	              const summaryTsMs = Number.isFinite(pendingCompactionSummaryTsMs) ? pendingCompactionSummaryTsMs : null;
+
+	              // Save baseline before switching session (it persists across sessions)
+	              const savedBaseline = baselineCacheReadInputTokens;
+
+	              switchToSession(String(newId));
+
+	              // For manual /compress, immediately set an estimated ctx value
+	              // This ensures the statusline shows a reasonable value right after compression
+	              if (summaryOutTokens != null && summaryOutTokens > 0) {
+	                const prefix = savedBaseline > 0 ? savedBaseline : 0;
+	                const est = prefix + suffixTokens + summaryOutTokens;
+	                if (est > 0) {
+	                  setCtxOverride(est, { tsMs: summaryTsMs != null ? summaryTsMs : tsMs, approx: true, overflow: false });
+	                }
+	              }
+
+	              // Always attempt to get a more accurate estimate from the new session's jsonl
+	              // This will read the compaction_state and estimate tokens from summaryText
+	              // Note: we pass forceApply=true to override even if ctxOverrideUsedTokens is set,
+	              // because the jsonl-based estimate may be more accurate
+	              maybeApplyCompactSessionEstimate(String(newId), {
+	                suffixTokens,
+	                tsMs: summaryTsMs != null ? summaryTsMs : tsMs,
+	                forceApply: true,
+	              });
+	              continue;
+	            }
           } catch {
             // ignore
           }
@@ -958,7 +1298,13 @@ async function main() {
       if (line.includes('[Compaction]')) {
         // Accept session-scoped compaction lines; allow end markers to clear even
         // if the line lacks a session id (some builds omit Context on end lines).
-        if (isSessionLine || (compacting && !lineSessionId)) {
+        // For manual /compress, [Compaction] End uses the NEW session ID, so we need
+        // to also accept End markers when compacting is true and it's an End line.
+        const isManualCompactionEnd = compacting &&
+          line.includes('[Compaction] End') &&
+          lineSessionId &&
+          String(lineSessionId).toLowerCase() !== sessionIdLower;
+        if (isSessionLine || (compacting && !lineSessionId) || isManualCompactionEnd) {
           const next = nextCompactionState(line, compacting);
           if (next !== compacting) {
             compacting = next;
@@ -969,6 +1315,9 @@ async function main() {
       }
 
       if (compactionChanged && compacting) {
+        pendingCompactionSuffixTokens = null;
+        pendingCompactionSummaryOutputTokens = null;
+        pendingCompactionSummaryTsMs = null;
         // Compaction can start after a context-limit error. Ensure we display the latest
         // pre-compaction ctx by reseeding from log (tail can miss bursts).
         seedLastContextFromLog({ maxScanBytes: 8 * 1024 * 1024, preferStreaming: true });
@@ -979,6 +1328,10 @@ async function main() {
         // can be delayed. Clear displayed ctx immediately to avoid showing stale numbers.
         last.cacheReadInputTokens = 0;
         last.contextCount = 0;
+        ctxAvailable = false;
+        ctxOverrideUsedTokens = null;
+        ctxApprox = false;
+        ctxOverflow = false;
         if (tsMs != null) lastContextMs = tsMs;
       }
 
@@ -1026,6 +1379,10 @@ async function main() {
       // Context usage can appear on multiple session-scoped log lines; update whenever present.
       // (Streaming is still the best source for outputTokens / LastOut.)
       updateLastFromContext(ctx, false, tsMs);
+
+      maybeCaptureCompactionSuffix(line, ctx);
+      maybeUpdateCtxFromContextLimitFailure(line, ctx, tsMs);
+      maybeApplyPostCompactionEstimate(line, ctx, tsMs);
 
       // For new sessions: if this is the first valid Context line and ctx is still 0,
       // trigger a reseed to catch any earlier log entries we might have missed.
@@ -1854,9 +2211,11 @@ async function main() {
     writeStdout(Buffer.from(rewritten));
   }
 
+  let cleanupCalled = false;
   function onChildExit(exitCode, signal) {
-    if (shouldStop) return;
     shouldStop = true;
+    if (cleanupCalled) return;
+    cleanupCalled = true;
     const code = exitCode ?? (signal != null ? 128 + signal : 0);
     cleanup().finally(() => process.exit(code));
   }
@@ -1941,6 +2300,9 @@ async function main() {
 
   // Forward signals to child's process group when possible.
   const forward = (sig) => {
+    // Stop processing child output before forwarding signal
+    // This prevents the child's cleanup/clear screen sequences from being written
+    shouldStop = true;
     try {
       process.kill(-pgid, sig);
     } catch {
@@ -2002,12 +2364,10 @@ async function main() {
     try {
       process.stdin.setRawMode(false);
     } catch {}
+    // Don't clear screen or reset scroll region on exit - preserve session ID and logs
+    // Only reset colors and show cursor
     try {
-      const { row, col } = cursor.position();
-      renderer.clearReservedArea(physicalRows, physicalCols, effectiveReservedRows, row, col);
-    } catch {}
-    try {
-      writeStdout("\\x1b[r\\x1b[0m\\x1b[?25h");
+      writeStdout("\\x1b[0m\\x1b[?25h");
     } catch {}
     try {
       monitor.kill();

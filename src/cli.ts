@@ -798,7 +798,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             name: "reasoningEffortValidationBypass",
             description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
             pattern: Buffer.from('T!=="none"&&T!=="off"&&!W.supportedReasoningEfforts.includes(T)'),
-            replacement: Buffer.from('T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)'),
+            replacement: Buffer.from(
+              'T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)',
+            ),
           });
         }
 

@@ -16,6 +16,14 @@ void test("statusline wrapper includes passthrough logic", async () => {
   assert.match(src, /function includesScrollRegionCSI\(\)/);
 });
 
+void test("statusline monitor tracks modelId from log contexts", async () => {
+  const src = await readFile(new URL("../src/statusline-patch.ts", import.meta.url), "utf8");
+  assert.match(src, /function extractModelIdFromContext/);
+  assert.match(src, /ctxApprox\s*\?\s*'~'\s*:\s*''/);
+  assert.match(src, /ctxOverflow\s*\?\s*'\+'\s*:\s*''/);
+  assert.match(src, /\?\s*'--'/);
+});
+
 void test("dist bundle contains passthrough logic (published output)", async () => {
   const dist = await readFile(new URL("../dist/cli.mjs", import.meta.url), "utf8");
   assert.match(dist, /should_passthrough\(\)/);
