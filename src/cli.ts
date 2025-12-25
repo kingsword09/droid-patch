@@ -157,7 +157,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
     const needsBinaryPatch =
-      !!isCustom || !!skipLogin || !!reasoningEffort || !!noTelemetry || !!autoHigh || (!!apiBase && !websearch);
+      !!isCustom ||
+      !!skipLogin ||
+      !!reasoningEffort ||
+      !!noTelemetry ||
+      !!autoHigh ||
+      (!!apiBase && !websearch);
 
     const statuslineEnabled = statusline;
 
