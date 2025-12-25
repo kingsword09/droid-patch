@@ -122,6 +122,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--disable-telemetry",
     "Disable telemetry and Sentry error reporting (block data uploads)",
   )
+  .option(
+    "--auto-high",
+    "Set default autonomy mode to auto-high (bypass settings.json race condition)",
+  )
   .option("--dry-run", "Verify patches without actually modifying the binary")
   .option("-p, --path <path>", "Path to the droid binary")
   .option("-o, --output <dir>", "Output directory for patched binary")
@@ -142,6 +146,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
+    const autoHigh = options["auto-high"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
     const outputDir = options.output as string | undefined;
@@ -152,7 +157,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
     const needsBinaryPatch =
-      !!isCustom || !!skipLogin || !!reasoningEffort || !!noTelemetry || (!!apiBase && !websearch);
+      !!isCustom || !!skipLogin || !!reasoningEffort || !!noTelemetry || !!autoHigh || (!!apiBase && !websearch);
 
     const statuslineEnabled = statusline;
 
@@ -279,7 +284,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !websearch &&
       !statuslineEnabled &&
       !reasoningEffort &&
-      !noTelemetry
+      !noTelemetry &&
+      !autoHigh
     ) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
@@ -299,6 +305,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       );
       console.log(
         styleText("gray", "  --disable-telemetry Disable telemetry and Sentry error reporting"),
+      );
+      console.log(
+        styleText("gray", "  --auto-high         Set default autonomy mode to auto-high"),
       );
       console.log(
         styleText("gray", "  --standalone        Standalone mode: mock non-LLM Factory APIs"),
@@ -483,6 +492,20 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       });
     }
 
+    // Add auto-high autonomy patch: hardcode getCurrentAutonomyMode to return "auto-high"
+    // This bypasses the race condition where AutonomyManager.initialize() runs before
+    // SettingsService has loaded settings.json, causing the default "normal" to be used.
+    // Pattern (50 chars): getCurrentAutonomyMode(){return this.autonomyMode}
+    // Replace (50 chars): getCurrentAutonomyMode(){return"auto-high"       }
+    if (autoHigh) {
+      patches.push({
+        name: "autoHighAutonomy",
+        description: 'Hardcode getCurrentAutonomyMode() to return "auto-high"',
+        pattern: Buffer.from("getCurrentAutonomyMode(){return this.autonomyMode}"),
+        replacement: Buffer.from('getCurrentAutonomyMode(){return"auto-high"       }'),
+      });
+    }
+
     try {
       const result = await patchDroid({
         inputPath: path,
@@ -579,6 +602,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
+            autoHigh: !!autoHigh,
           },
           {
             droidPatchVersion: version,
@@ -822,6 +846,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: "Make flushToWeb always return (!0|| = always true)",
             pattern: Buffer.from("this.webEvents.length===0"),
             replacement: Buffer.from("!0||this.webEvents.length"),
+          });
+        }
+
+        if (meta.patches.autoHigh) {
+          patches.push({
+            name: "autoHighAutonomy",
+            description: 'Hardcode getCurrentAutonomyMode() to return "auto-high"',
+            pattern: Buffer.from("getCurrentAutonomyMode(){return this.autonomyMode}"),
+            replacement: Buffer.from('getCurrentAutonomyMode(){return"auto-high"       }'),
           });
         }
 
