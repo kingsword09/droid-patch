@@ -518,7 +518,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             websearchTarget,
             standalone,
           );
-            execTargetPath = wrapperScript;
+          execTargetPath = wrapperScript;
 
           console.log();
           console.log(styleText("cyan", "WebSearch enabled"));
