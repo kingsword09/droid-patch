@@ -409,6 +409,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
   const statuslineDir = join(DROID_PATCH_DIR, "statusline");
   const statuslineWrapperPath = join(statuslineDir, aliasName);
   const statuslineMonitorPath = join(statuslineDir, `${aliasName}-statusline.js`);
+  const statuslineSessionsPath = join(statuslineDir, `${aliasName}-sessions.js`);
 
   if (existsSync(statuslineWrapperPath)) {
     await unlink(statuslineWrapperPath);
@@ -419,6 +420,12 @@ export async function removeAlias(aliasName: string): Promise<void> {
   if (existsSync(statuslineMonitorPath)) {
     await unlink(statuslineMonitorPath);
     console.log(styleText("green", `    Removed statusline monitor: ${statuslineMonitorPath}`));
+    removed = true;
+  }
+
+  if (existsSync(statuslineSessionsPath)) {
+    await unlink(statuslineSessionsPath);
+    console.log(styleText("green", `    Removed sessions browser: ${statuslineSessionsPath}`));
     removed = true;
   }
 
@@ -847,7 +854,6 @@ export type FilterFlag =
   | "is-custom"
   | "skip-login"
   | "websearch"
-  | "statusline"
   | "api-base"
   | "reasoning-effort"
   | "disable-telemetry"
@@ -972,9 +978,6 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             break;
           case "websearch":
             if (!patches.websearch) matches = false;
-            break;
-          case "statusline":
-            if (!patches.statusline) matches = false;
             break;
           case "reasoning-effort":
             if (!patches.reasoningEffort) matches = false;

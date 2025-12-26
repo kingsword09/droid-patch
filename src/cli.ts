@@ -16,8 +16,6 @@ import {
   type FilterFlag,
 } from "./alias.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
-import { createStatuslineFiles } from "./statusline-patch.ts";
-import { createSessionsScript } from "./sessions-patch.ts";
 import {
   saveAliasMetadata,
   createMetadata,
@@ -111,8 +109,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--websearch",
     "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
   )
-  .option("--statusline", "Enable a Claude-style statusline (terminal UI)")
-  .option("--sessions", "Enable sessions browser (--sessions flag in alias)")
   .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
     "--reasoning-effort",
@@ -138,8 +134,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
-    const statusline = options["statusline"] as boolean;
-    const sessions = options["sessions"] as boolean;
     const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
@@ -164,17 +158,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !!autoHigh ||
       (!!apiBase && !websearch);
 
-    const statuslineEnabled = statusline;
-
     // Wrapper-only mode (no binary patching needed):
     // - --websearch (optional --standalone)
-    // - --statusline
-    // - both combined (statusline wraps websearch)
-    if (!needsBinaryPatch && (websearch || statuslineEnabled)) {
+    if (!needsBinaryPatch && websearch) {
       if (!alias) {
-        console.log(styleText("red", "Error: Alias name required for --websearch/--statusline"));
+        console.log(styleText("red", "Error: Alias name required for --websearch"));
         console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
-        console.log(styleText("gray", "Usage: npx droid-patch --statusline <alias>"));
         process.exit(1);
       }
 
@@ -189,41 +178,19 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           console.log(styleText("white", `Standalone mode: enabled`));
         }
       }
-      if (statuslineEnabled) {
-        console.log(styleText("white", `Statusline: enabled`));
-      }
       console.log();
 
       let execTargetPath = path;
-      if (websearch) {
-        // Create websearch proxy files (proxy script + wrapper)
-        const proxyDir = join(homedir(), ".droid-patch", "proxy");
-        const { wrapperScript } = await createWebSearchUnifiedFiles(
-          proxyDir,
-          execTargetPath,
-          alias,
-          websearchTarget,
-          standalone,
-        );
-        execTargetPath = wrapperScript;
-      }
-
-      if (statuslineEnabled) {
-        const statuslineDir = join(homedir(), ".droid-patch", "statusline");
-        // Create sessions script only if --sessions is enabled
-        let sessionsScript: string | undefined;
-        if (sessions) {
-          const result = await createSessionsScript(statuslineDir, alias);
-          sessionsScript = result.sessionsScript;
-        }
-        const { wrapperScript } = await createStatuslineFiles(
-          statuslineDir,
-          execTargetPath,
-          alias,
-          sessionsScript,
-        );
-        execTargetPath = wrapperScript;
-      }
+      // Create websearch proxy files (proxy script + wrapper)
+      const proxyDir = join(homedir(), ".droid-patch", "proxy");
+      const { wrapperScript } = await createWebSearchUnifiedFiles(
+        proxyDir,
+        execTargetPath,
+        alias,
+        websearchTarget,
+        standalone,
+      );
+      execTargetPath = wrapperScript;
 
       // Create alias pointing to outer wrapper
       const aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
@@ -238,8 +205,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           skipLogin: false,
           apiBase: apiBase || null,
           websearch: !!websearch,
-          statusline: !!statuslineEnabled,
-          sessions: !!sessions,
           reasoningEffort: false,
           noTelemetry: false,
           standalone: standalone,
@@ -287,7 +252,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !skipLogin &&
       !apiBase &&
       !websearch &&
-      !statuslineEnabled &&
       !reasoningEffort &&
       !noTelemetry &&
       !autoHigh
@@ -304,7 +268,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         ),
       );
       console.log(styleText("gray", "  --websearch         Enable local WebSearch proxy"));
-      console.log(styleText("gray", "  --statusline        Enable Claude-style statusline"));
       console.log(
         styleText("gray", "  --reasoning-effort  Set reasoning effort level for custom models"),
       );
@@ -324,8 +287,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("cyan", "  npx droid-patch --is-custom --skip-login droid-patched"));
       console.log(styleText("cyan", "  npx droid-patch --websearch droid-search"));
       console.log(styleText("cyan", "  npx droid-patch --websearch --standalone droid-local"));
-      console.log(styleText("cyan", "  npx droid-patch --statusline droid-status"));
-      console.log(styleText("cyan", "  npx droid-patch --websearch --statusline droid-search-ui"));
       console.log(styleText("cyan", "  npx droid-patch --disable-telemetry droid-private"));
       console.log(
         styleText(
@@ -557,7 +518,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             websearchTarget,
             standalone,
           );
-          execTargetPath = wrapperScript;
+            execTargetPath = wrapperScript;
 
           console.log();
           console.log(styleText("cyan", "WebSearch enabled"));
@@ -567,26 +528,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           }
         }
 
-        if (statuslineEnabled) {
-          const statuslineDir = join(homedir(), ".droid-patch", "statusline");
-          let sessionsScript: string | undefined;
-          if (sessions) {
-            const result = await createSessionsScript(statuslineDir, alias);
-            sessionsScript = result.sessionsScript;
-          }
-          const { wrapperScript } = await createStatuslineFiles(
-            statuslineDir,
-            execTargetPath,
-            alias,
-            sessionsScript,
-          );
-          execTargetPath = wrapperScript;
-          console.log();
-          console.log(styleText("cyan", "Statusline enabled"));
-        }
-
         let aliasResult;
-        if (websearch || statuslineEnabled) {
+        if (websearch) {
           aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
           aliasResult = await createAlias(result.outputPath, alias, verbose);
@@ -602,8 +545,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             skipLogin: !!skipLogin,
             apiBase: apiBase || null,
             websearch: !!websearch,
-            statusline: !!statuslineEnabled,
-            sessions: !!sessions,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
@@ -642,13 +583,31 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, statusline, api-base, reasoning-effort, disable-telemetry, standalone)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
     const patchVersion = options["patch-version"] as string | undefined;
     const droidVersion = options["droid-version"] as string | undefined;
-    const flag = options.flag as FilterFlag | undefined;
+    const flagRaw = options.flag as string | undefined;
+    let flag: FilterFlag | undefined;
+    if (flagRaw) {
+      const allowedFlags: FilterFlag[] = [
+        "is-custom",
+        "skip-login",
+        "websearch",
+        "api-base",
+        "reasoning-effort",
+        "disable-telemetry",
+        "standalone",
+      ];
+      if (!allowedFlags.includes(flagRaw as FilterFlag)) {
+        console.error(styleText("red", `Error: Invalid --flag value: ${flagRaw}`));
+        console.error(styleText("gray", `Allowed: ${allowedFlags.join(", ")}`));
+        process.exit(1);
+      }
+      flag = flagRaw as FilterFlag;
+    }
 
     // If filter options are provided, use filter mode
     if (patchVersion || droidVersion || flag) {
@@ -932,24 +891,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           }
         }
 
-        if (meta.patches.statusline) {
-          const statuslineDir = join(homedir(), ".droid-patch", "statusline");
-          let sessionsScript: string | undefined;
-          if (meta.patches.sessions) {
-            const result = await createSessionsScript(statuslineDir, meta.name);
-            sessionsScript = result.sessionsScript;
-          }
-          const { wrapperScript } = await createStatuslineFiles(
-            statuslineDir,
-            execTargetPath,
-            meta.name,
-            sessionsScript,
-          );
-          execTargetPath = wrapperScript;
-          if (verbose) {
-            console.log(styleText("gray", `  Regenerated statusline wrapper`));
-          }
-        }
+        // If this alias previously used removed features (statusline/sessions), drop legacy flags
+        // so the updated alias points directly to the new target wrapper/binary.
+        delete (meta.patches as Record<string, unknown>).statusline;
+        delete (meta.patches as Record<string, unknown>).sessions;
 
         // Update symlink - find existing or use stored aliasPath
         const { symlink, unlink, readlink, lstat } = await import("node:fs/promises");

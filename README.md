@@ -32,15 +32,6 @@ npx droid-patch --websearch --standalone droid-local
 # Patch with --reasoning-effort to enable reasoning for custom models
 npx droid-patch --reasoning-effort droid-reasoning
 
-# Patch with --statusline for a Claude-style terminal statusline
-npx droid-patch --statusline droid-status
-
-# Combine --websearch and --statusline
-npx droid-patch --websearch --statusline droid-full-ui
-
-# Enable sessions browser (interactive session selector)
-npx droid-patch --statusline --sessions droid-full
-
 # Combine multiple patches
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
 
@@ -72,8 +63,6 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
 | `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
 | `--websearch`         | Inject local WebSearch proxy with multiple search providers                                                  |
-| `--statusline`        | Enable Claude-style terminal statusline (Bun-based wrapper; requires Bun >= 1.3.5)                           |
-| `--sessions`          | Enable interactive sessions browser (use with `--statusline`, browse and resume past sessions)               |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                                          |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
@@ -329,102 +318,6 @@ npx droid-patch --disable-telemetry droid-private
 # Combine with other patches
 npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
 ```
-
-### `--statusline`
-
-Enables a Claude-style statusline at the bottom of the terminal, displaying real-time session information.
-
-**Purpose**: Provide at-a-glance visibility into model, context usage, git status, and token usage without interrupting the main UI.
-
-**Features**:
-
-- **Real-time context tracking**: Shows current token usage (cache read + new input)
-- **Model info**: Displays the active model and provider
-- **Token usage summary**: Shows session totals (In/Out/Cre/Read/Think) plus `LastOut` for the most recent reply
-- **Git integration**: Shows current branch and diff summary (+insertions, -deletions)
-- **Compaction indicator**: Shows when context compaction is in progress
-- **PTY proxy architecture**: Reserves bottom row(s) for statusline without flickering
-- **Non-interactive passthrough**: `--version`/`version`, `--help`/`help`, `completion(s)`, `exec` (or non-TTY) bypass the statusline wrapper
-
-**How it works**:
-
-1. A Bun PTY wrapper intercepts terminal I/O and reserves bottom row(s)
-2. A Node.js monitor script tails the Factory log file (`~/.factory/logs/droid-log-single.log`)
-3. The monitor parses streaming token usage and emits statusline frames
-4. The wrapper renders the latest frame on the reserved rows
-
-**Usage**:
-
-```bash
-# Enable statusline only
-npx droid-patch --statusline droid-status
-
-# Combine with websearch
-npx droid-patch --websearch --statusline droid-full-ui
-
-# Combine with all features
-npx droid-patch --is-custom --skip-login --websearch --statusline droid-ultimate
-```
-
-**Example statusline display**:
-
-```
- Model: claude-sonnet-4-20250514  Prov: anthropic  Ctx: 12345 (c8000+n4345)  In:33 Out:1273 Cre:33.9k Read:25.9k Think:212 LastOut:130  ⎇ main (+10,-5)  cwd: my-project
-```
-
-**Note**: The statusline uses a Bun-based PTY wrapper and requires Bun >= 1.3.5. It works best in modern terminal emulators (iTerm2, Alacritty, Kitty, etc.). Apple Terminal is supported but uses a longer render interval to reduce flicker.
-
-### `--sessions`
-
-Enables an interactive sessions browser that allows you to browse, search, and resume past sessions in the current directory.
-
-**Purpose**: Quickly find and resume previous conversations without remembering session IDs.
-
-**Features**:
-
-- **Interactive selector**: Use arrow keys (↑/↓) or vim keys (j/k) to navigate
-- **Session details**: Shows session ID, title, model, message count, timestamps
-- **First/last input display**: Preview what you discussed in each session
-- **Auto-resume**: Press Enter to resume the selected session with all patch features preserved
-- **Filtered results**: Only shows sessions with actual user interactions (no empty sessions)
-- **Sorted by recency**: Most recently used sessions appear first
-
-**Usage**:
-
-```bash
-# Enable sessions browser (requires --statusline)
-npx droid-patch --statusline --sessions droid-full
-
-# Browse sessions
-droid-full --sessions
-```
-
-**Interactive controls**:
-
-- `↑`/`↓` or `j`/`k` - Navigate up/down
-- `Page Up`/`Page Down` - Jump pages
-- `Enter` - Resume selected session
-- `q` or `Ctrl+C` - Quit
-
-**Example display**:
-
-```
-Sessions: /Users/you/project
-[↑/↓] Select  [Enter] Resume  [q] Quit
-
-▶ Fix statusline flickering issue
-    ID: abc123def456...
-    Last: 12-18 14:30 | Model: claude-sonnet-4 | 42 msgs
-    First input: The statusline is flickering when...
-    Last input:  Can you also add error handling?
-
-  Add websearch feature (12-17 09:15)
-  Refactor CLI options (12-16 18:22)
-
-Page 1/3 (25 sessions)
-```
-
-**Note**: The `--sessions` flag requires `--statusline` to be enabled. Sessions are stored in `~/.factory/sessions/` and filtered by the current working directory.
 
 ---
 
@@ -720,21 +613,8 @@ npx droid-patch --websearch --standalone droid-local
 # Privacy mode: disable telemetry
 npx droid-patch --disable-telemetry droid-private
 
-# Statusline mode: Claude-style terminal statusline
-npx droid-patch --statusline droid-status
-
-# Statusline + Sessions: browse and resume past sessions
-npx droid-patch --statusline --sessions droid-full
-droid-full --sessions  # Interactive session browser
-
-# Websearch + Statusline: full UI experience
-npx droid-patch --websearch --statusline droid-full-ui
-
 # Full local setup: all features combined
 npx droid-patch --is-custom --skip-login --websearch --standalone --disable-telemetry droid-full-local
-
-# Ultimate setup: all features including statusline
-npx droid-patch --is-custom --skip-login --websearch --standalone --statusline --disable-telemetry droid-ultimate
 
 # Websearch with custom backend
 npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
@@ -749,8 +629,6 @@ npx droid-patch list
 # Clean up
 npx droid-patch remove droid-search              # remove single alias
 npx droid-patch remove --flag=websearch          # remove all websearch aliases
-npx droid-patch remove --flag=statusline         # remove all statusline aliases
-npx droid-patch remove --flag=sessions           # remove all sessions-enabled aliases
 npx droid-patch remove --flag=standalone         # remove all standalone aliases
 npx droid-patch remove --patch-version=0.4.0     # remove by droid-patch version
 npx droid-patch clear                            # remove everything
