@@ -2,9 +2,13 @@
  * WebSearch Native Provider Mode (--websearch-proxy)
  *
  * Uses model's native websearch based on ~/.factory/settings.json configuration
- * Requires proxy plugin (anthropic4droid) to handle format conversion
+ * Requires proxy plugin to handle format conversion:
+ * - Anthropic provider: anthropic4droid plugin
+ * - OpenAI provider: openai4droid plugin (adds CODEX_INSTRUCTIONS)
  *
- * Supported providers: Anthropic, OpenAI (extensible)
+ * Supported providers:
+ * - Anthropic: web_search_20250305 server tool, results in web_search_tool_result
+ * - OpenAI: web_search tool, results in message.content[].annotations[] as url_citation
  */
 
 export function generateNativeSearchProxyServer(
@@ -123,8 +127,10 @@ async function searchOpenAINative(query, numResults, modelConfig) {
   const { baseUrl, apiKey, model } = modelConfig;
   
   try {
+    // Note: instructions will be added by openai4droid proxy plugin
     const requestBody = {
       model: model,
+      stream: false,
       tools: [{ type: 'web_search' }],
       tool_choice: 'required',
       input: 'Search the web for: ' + query + '\\n\\nReturn up to ' + numResults + ' relevant results.'
@@ -143,15 +149,22 @@ async function searchOpenAINative(query, numResults, modelConfig) {
     try { response = JSON.parse(responseStr); } catch { return null; }
     if (response.error) { log('API error:', response.error.message); return null; }
     
+    // Extract results from url_citation annotations in message output
     const results = [];
     for (const item of (response.output || [])) {
-      if (item.type === 'web_search_call' && item.status === 'completed') {
-        for (const result of (item.results || [])) {
-          results.push({
-            title: result.title || '',
-            url: result.url || '',
-            content: result.snippet || result.content || ''
-          });
+      if (item.type === 'message' && Array.isArray(item.content)) {
+        for (const content of item.content) {
+          if (content.type === 'output_text' && Array.isArray(content.annotations)) {
+            for (const annotation of content.annotations) {
+              if (annotation.type === 'url_citation' && annotation.url) {
+                results.push({
+                  title: annotation.title || '',
+                  url: annotation.url || '',
+                  content: annotation.title || ''
+                });
+              }
+            }
+          }
         }
       }
     }
