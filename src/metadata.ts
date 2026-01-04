@@ -35,8 +35,10 @@ export interface AliasMetadata {
     skipLogin: boolean;
     /** API base URL for binary patching or websearch forward target */
     apiBase: string | null;
-    /** Whether websearch is enabled */
+    /** Whether websearch is enabled (external providers mode) */
     websearch: boolean;
+    /** Whether websearch-proxy is enabled (native provider mode) */
+    websearchProxy?: boolean;
     /** @deprecated Old proxy field, kept for backward compatibility */
     proxy?: string | null;
     reasoningEffort: boolean;
@@ -166,14 +168,18 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.isCustom) applied.push("isCustom");
   if (patches.skipLogin) applied.push("skipLogin");
   // Show apiBase only when not using websearch (binary patch mode)
-  if (patches.apiBase && !patches.websearch) applied.push(`apiBase(${patches.apiBase})`);
-  // Show websearch with optional custom target
+  if (patches.apiBase && !patches.websearch && !patches.websearchProxy) applied.push(`apiBase(${patches.apiBase})`);
+  // Show websearch with optional custom target (external providers mode)
   if (patches.websearch) {
     const target = patches.apiBase || "api.factory.ai";
     applied.push(`websearch(${target})`);
   }
+  // Show websearchProxy (native provider mode)
+  if (patches.websearchProxy) {
+    applied.push("websearchProxy(native)");
+  }
   // Support old proxy field for backward compatibility
-  if (patches.proxy && !patches.websearch) applied.push(`websearch(${patches.proxy})`);
+  if (patches.proxy && !patches.websearch && !patches.websearchProxy) applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   if (patches.noTelemetry) applied.push("noTelemetry");
   if (patches.standalone) applied.push("standalone");

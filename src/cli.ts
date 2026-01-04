@@ -107,7 +107,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   )
   .option(
     "--websearch",
-    "Enable local WebSearch proxy (each instance runs own proxy, auto-cleanup on exit)",
+    "Enable local WebSearch proxy with external providers (Smithery, Google PSE, etc.)",
+  )
+  .option(
+    "--websearch-proxy",
+    "Enable native provider websearch (requires proxy plugin, reads ~/.factory/settings.json)",
   )
   .option("--standalone", "Standalone mode: mock non-LLM Factory APIs (use with --websearch)")
   .option(
@@ -134,10 +138,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const skipLogin = options["skip-login"] as boolean;
     const apiBase = options["api-base"] as string | undefined;
     const websearch = options["websearch"] as boolean;
+    const websearchProxy = options["websearch-proxy"] as boolean;
     const standalone = options["standalone"] as boolean;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
+    // --websearch-proxy uses native provider websearch (requires proxy plugin)
+    const websearchProxyEnabled = websearchProxy;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
     const autoHigh = options["auto-high"] as boolean;
@@ -156,14 +163,25 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !!reasoningEffort ||
       !!noTelemetry ||
       !!autoHigh ||
-      (!!apiBase && !websearch);
+      (!!apiBase && !websearch && !websearchProxy);
+
+    // Check for conflicting flags
+    if (websearch && websearchProxy) {
+      console.log(styleText("red", "Error: Cannot use --websearch and --websearch-proxy together"));
+      console.log(styleText("gray", "Choose one:"));
+      console.log(styleText("gray", "  --websearch        External providers (Smithery, Google PSE, etc.)"));
+      console.log(styleText("gray", "  --websearch-proxy  Native provider (requires proxy plugin)"));
+      process.exit(1);
+    }
 
     // Wrapper-only mode (no binary patching needed):
-    // - --websearch (optional --standalone)
-    if (!needsBinaryPatch && websearch) {
+    // - --websearch or --websearch-proxy (optional --standalone)
+    const isWebsearchMode = websearch || websearchProxy;
+    if (!needsBinaryPatch && isWebsearchMode) {
       if (!alias) {
-        console.log(styleText("red", "Error: Alias name required for --websearch"));
-        console.log(styleText("gray", "Usage: npx droid-patch --websearch <alias>"));
+        const flag = websearchProxy ? "--websearch-proxy" : "--websearch";
+        console.log(styleText("red", `Error: Alias name required for ${flag}`));
+        console.log(styleText("gray", `Usage: npx droid-patch ${flag} <alias>`));
         process.exit(1);
       }
 
@@ -171,24 +189,32 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText(["cyan", "bold"], "  Droid Wrapper Setup"));
       console.log(styleText("cyan", "═".repeat(60)));
       console.log();
-      if (websearch) {
-        console.log(styleText("white", `WebSearch: enabled`));
+      if (websearchProxy) {
+        console.log(styleText("white", `WebSearch: native provider mode`));
+        console.log(styleText("gray", `  Requires proxy plugin (anthropic4droid)`));
+        console.log(styleText("gray", `  Reads model config from ~/.factory/settings.json`));
+      } else if (websearch) {
+        console.log(styleText("white", `WebSearch: external providers mode`));
         console.log(styleText("white", `Forward target: ${websearchTarget}`));
-        if (standalone) {
-          console.log(styleText("white", `Standalone mode: enabled`));
-        }
+      }
+      if (standalone) {
+        console.log(styleText("white", `Standalone mode: enabled`));
       }
       console.log();
 
       let execTargetPath = path;
       // Create websearch proxy files (proxy script + wrapper)
       const proxyDir = join(homedir(), ".droid-patch", "proxy");
+      // For --websearch-proxy, apiBase comes from settings.json at runtime
+      // For --websearch, use apiBase or default Factory API
+      const forwardTarget = websearchProxy ? undefined : websearchTarget;
       const { wrapperScript } = await createWebSearchUnifiedFiles(
         proxyDir,
         execTargetPath,
         alias,
-        websearchTarget,
+        forwardTarget,
         standalone,
+        websearchProxy, // useNativeProvider flag
       );
       execTargetPath = wrapperScript;
 
@@ -205,6 +231,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           skipLogin: false,
           apiBase: apiBase || null,
           websearch: !!websearch,
+          websearchProxy: !!websearchProxy,
           reasoningEffort: false,
           noTelemetry: false,
           standalone: standalone,
@@ -225,12 +252,24 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log("Run directly:");
       console.log(styleText("yellow", `  ${alias}`));
       console.log();
-      if (websearch) {
-        console.log(styleText("cyan", "Auto-shutdown:"));
-        console.log(
-          styleText("gray", "  Proxy auto-shuts down after 5 min idle (no manual cleanup needed)"),
-        );
-        console.log(styleText("gray", "  To disable: export DROID_PROXY_IDLE_TIMEOUT=0"));
+      if (websearchProxy) {
+        console.log(styleText("cyan", "Native Provider WebSearch (--websearch-proxy):"));
+        console.log(styleText("gray", "  Uses model's built-in websearch via proxy plugin"));
+        console.log(styleText("gray", "  Reads model config from ~/.factory/settings.json"));
+        console.log();
+        console.log(styleText("yellow", "IMPORTANT: Requires proxy plugin (anthropic4droid)"));
+        console.log();
+        console.log("Supported providers:");
+        console.log(styleText("yellow", "  - anthropic: Claude web_search_20250305 server tool"));
+        console.log(styleText("yellow", "  - openai: OpenAI web_search tool"));
+        console.log(styleText("gray", "  - generic-chat-completion-api: Not supported"));
+        console.log();
+        console.log("Debug mode:");
+        console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1    # Basic logs"));
+        console.log(styleText("gray", "  export DROID_SEARCH_VERBOSE=1  # Full request/response"));
+      } else if (websearch) {
+        console.log(styleText("cyan", "External Providers WebSearch (--websearch):"));
+        console.log(styleText("gray", "  Uses external search providers (Smithery, Google PSE, etc.)"));
         console.log();
         console.log("Search providers (in priority order):");
         console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
@@ -509,27 +548,34 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         let execTargetPath = result.outputPath;
 
-        if (websearch) {
+        if (websearch || websearchProxy) {
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const { wrapperScript } = await createWebSearchUnifiedFiles(
             proxyDir,
             execTargetPath,
             alias,
-            websearchTarget,
+            websearchProxy ? undefined : websearchTarget, // websearchProxy reads from settings.json at runtime
             standalone,
+            websearchProxy, // useNativeProvider flag
           );
           execTargetPath = wrapperScript;
 
           console.log();
-          console.log(styleText("cyan", "WebSearch enabled"));
-          console.log(styleText("white", `  Forward target: ${websearchTarget}`));
+          if (websearchProxy) {
+            console.log(styleText("cyan", "WebSearch enabled (native provider mode)"));
+            console.log(styleText("gray", "  Requires proxy plugin (anthropic4droid)"));
+            console.log(styleText("gray", "  Reads model config from ~/.factory/settings.json"));
+          } else {
+            console.log(styleText("cyan", "WebSearch enabled (external providers mode)"));
+            console.log(styleText("white", `  Forward target: ${websearchTarget}`));
+          }
           if (standalone) {
             console.log(styleText("white", `  Standalone mode: enabled`));
           }
         }
 
         let aliasResult;
-        if (websearch) {
+        if (websearch || websearchProxy) {
           aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
           aliasResult = await createAlias(result.outputPath, alias, verbose);
@@ -545,6 +591,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             skipLogin: !!skipLogin,
             apiBase: apiBase || null,
             websearch: !!websearch,
+            websearchProxy: !!websearchProxy,
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
