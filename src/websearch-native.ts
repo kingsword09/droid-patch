@@ -1,13 +1,15 @@
 /**
  * WebSearch Native Provider Mode (--websearch-proxy)
- * 
+ *
  * Uses model's native websearch based on ~/.factory/settings.json configuration
  * Requires proxy plugin (anthropic4droid) to handle format conversion
- * 
+ *
  * Supported providers: Anthropic, OpenAI (extensible)
  */
 
-export function generateNativeSearchProxyServer(factoryApiUrl: string = "https://api.factory.ai"): string {
+export function generateNativeSearchProxyServer(
+  factoryApiUrl: string = "https://api.factory.ai",
+): string {
   return `#!/usr/bin/env node
 // Droid WebSearch Proxy Server (Native Provider Mode)
 // Reads ~/.factory/settings.json for model configuration

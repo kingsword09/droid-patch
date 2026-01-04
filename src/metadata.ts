@@ -168,7 +168,8 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.isCustom) applied.push("isCustom");
   if (patches.skipLogin) applied.push("skipLogin");
   // Show apiBase only when not using websearch (binary patch mode)
-  if (patches.apiBase && !patches.websearch && !patches.websearchProxy) applied.push(`apiBase(${patches.apiBase})`);
+  if (patches.apiBase && !patches.websearch && !patches.websearchProxy)
+    applied.push(`apiBase(${patches.apiBase})`);
   // Show websearch with optional custom target (external providers mode)
   if (patches.websearch) {
     const target = patches.apiBase || "api.factory.ai";
@@ -179,7 +180,8 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
     applied.push("websearchProxy(native)");
   }
   // Support old proxy field for backward compatibility
-  if (patches.proxy && !patches.websearch && !patches.websearchProxy) applied.push(`websearch(${patches.proxy})`);
+  if (patches.proxy && !patches.websearch && !patches.websearchProxy)
+    applied.push(`websearch(${patches.proxy})`);
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   if (patches.noTelemetry) applied.push("noTelemetry");
   if (patches.standalone) applied.push("standalone");

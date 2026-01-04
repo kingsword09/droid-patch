@@ -1,6 +1,6 @@
 /**
  * WebSearch Patch Generator
- * 
+ *
  * Two modes:
  * - --websearch: External providers (Smithery, Google PSE, Serper, Brave, SearXNG, DuckDuckGo)
  * - --websearch-proxy: Native provider via proxy plugin (reads ~/.factory/settings.json)
@@ -10,11 +10,17 @@ import type { Patch } from "./patcher.ts";
 import { writeFile, chmod, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { generateSearchProxyServerCode, generateExternalSearchProxyServer } from "./websearch-external.ts";
+import {
+  generateSearchProxyServerCode,
+  generateExternalSearchProxyServer,
+} from "./websearch-external.ts";
 import { generateNativeSearchProxyServer } from "./websearch-native.ts";
 
 // Re-export for backward compatibility
-export { generateSearchProxyServerCode, generateExternalSearchProxyServer } from "./websearch-external.ts";
+export {
+  generateSearchProxyServerCode,
+  generateExternalSearchProxyServer,
+} from "./websearch-external.ts";
 export { generateNativeSearchProxyServer } from "./websearch-native.ts";
 
 /**
@@ -202,7 +208,7 @@ exit $DROID_EXIT_CODE
 
 /**
  * Create unified WebSearch files
- * 
+ *
  * @param outputDir - Directory to write files to
  * @param droidPath - Path to droid binary
  * @param aliasName - Alias name for the wrapper
@@ -229,12 +235,17 @@ export async function createWebSearchUnifiedFiles(
   const proxyCode = useNativeProvider
     ? generateNativeSearchProxyServer(factoryApiUrl)
     : generateExternalSearchProxyServer(factoryApiUrl);
-  
+
   await writeFile(proxyScriptPath, proxyCode);
   console.log(`[*] Created proxy script: ${proxyScriptPath}`);
-  console.log(`[*] Mode: ${useNativeProvider ? "native provider (requires proxy plugin)" : "external providers"}`);
+  console.log(
+    `[*] Mode: ${useNativeProvider ? "native provider (requires proxy plugin)" : "external providers"}`,
+  );
 
-  await writeFile(wrapperScriptPath, generateUnifiedWrapper(droidPath, proxyScriptPath, standalone));
+  await writeFile(
+    wrapperScriptPath,
+    generateUnifiedWrapper(droidPath, proxyScriptPath, standalone),
+  );
   await chmod(wrapperScriptPath, 0o755);
   console.log(`[*] Created wrapper: ${wrapperScriptPath}`);
 

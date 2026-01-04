@@ -200,10 +200,10 @@ npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-
 
 **重要**：`--websearch` 和 `--websearch-proxy` **互斥** - 只能选择其中一个。
 
-| 模式               | 描述                           | 需要                        |
-| ------------------ | ------------------------------ | --------------------------- |
-| `--websearch`      | 外部搜索提供商                 | 环境变量配置                |
-| `--websearch-proxy`| 模型原生 web_search 能力       | proxy 插件 + 自定义模型     |
+| 模式                | 描述                     | 需要                    |
+| ------------------- | ------------------------ | ----------------------- |
+| `--websearch`       | 外部搜索提供商           | 环境变量配置            |
+| `--websearch-proxy` | 模型原生 web_search 能力 | proxy 插件 + 自定义模型 |
 
 ### `--websearch`
 

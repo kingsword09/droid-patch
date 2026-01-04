@@ -1,6 +1,6 @@
 /**
  * WebSearch External Providers Mode (--websearch)
- * 
+ *
  * Priority: Smithery Exa > Google PSE > Serper > Brave > SearXNG > DuckDuckGo
  */
 
@@ -217,10 +217,12 @@ process.on('SIGINT', function() { server.close(); process.exit(0); });
 `;
 }
 
-export function generateExternalSearchProxyServer(factoryApiUrl: string = "https://api.factory.ai"): string {
+export function generateExternalSearchProxyServer(
+  factoryApiUrl: string = "https://api.factory.ai",
+): string {
   const code = generateSearchProxyServerCode();
   return code.replace(
     "const FACTORY_API = 'https://api.factory.ai';",
-    `const FACTORY_API = '${factoryApiUrl}';`
+    `const FACTORY_API = '${factoryApiUrl}';`,
   );
 }

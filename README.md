@@ -200,10 +200,10 @@ npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-
 
 **Important**: `--websearch` and `--websearch-proxy` are **mutually exclusive** - you can only use one at a time.
 
-| Mode               | Description                              | Requires                    |
-| ------------------ | ---------------------------------------- | --------------------------- |
-| `--websearch`      | External search providers                | Environment variables       |
-| `--websearch-proxy`| Model's native web_search capability     | Proxy plugin + custom model |
+| Mode                | Description                          | Requires                    |
+| ------------------- | ------------------------------------ | --------------------------- |
+| `--websearch`       | External search providers            | Environment variables       |
+| `--websearch-proxy` | Model's native web_search capability | Proxy plugin + custom model |
 
 ### `--websearch`
 

@@ -169,8 +169,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     if (websearch && websearchProxy) {
       console.log(styleText("red", "Error: Cannot use --websearch and --websearch-proxy together"));
       console.log(styleText("gray", "Choose one:"));
-      console.log(styleText("gray", "  --websearch        External providers (Smithery, Google PSE, etc.)"));
-      console.log(styleText("gray", "  --websearch-proxy  Native provider (requires proxy plugin)"));
+      console.log(
+        styleText("gray", "  --websearch        External providers (Smithery, Google PSE, etc.)"),
+      );
+      console.log(
+        styleText("gray", "  --websearch-proxy  Native provider (requires proxy plugin)"),
+      );
       process.exit(1);
     }
 
@@ -269,7 +273,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log(styleText("gray", "  export DROID_SEARCH_VERBOSE=1  # Full request/response"));
       } else if (websearch) {
         console.log(styleText("cyan", "External Providers WebSearch (--websearch):"));
-        console.log(styleText("gray", "  Uses external search providers (Smithery, Google PSE, etc.)"));
+        console.log(
+          styleText("gray", "  Uses external search providers (Smithery, Google PSE, etc.)"),
+        );
         console.log();
         console.log("Search providers (in priority order):");
         console.log(styleText("yellow", "  1. Smithery Exa (best quality):"));
