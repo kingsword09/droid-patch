@@ -62,8 +62,9 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--is-custom`         | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩）                             |
 | `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                                                     |
 | `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
-| `--websearch`         | 注入本地 WebSearch 代理，支持多个搜索提供商                                                     |
-| `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 配合使用）                               |
+| `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Serper、Brave、SearXNG、DuckDuckGo                     |
+| `--websearch-proxy`   | 原生搜索模式：使用模型内置的 web_search 能力（需要 proxy 插件）                                 |
+| `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
 | `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
@@ -195,15 +196,24 @@ npx droid-patch --websearch --api-base "http://127.0.0.1:20002" droid-custom
 npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-custom
 ```
 
+### `--websearch` vs `--websearch-proxy`
+
+**重要**：`--websearch` 和 `--websearch-proxy` **互斥** - 只能选择其中一个。
+
+| 模式               | 描述                           | 需要                        |
+| ------------------ | ------------------------------ | --------------------------- |
+| `--websearch`      | 外部搜索提供商                 | 环境变量配置                |
+| `--websearch-proxy`| 模型原生 web_search 能力       | proxy 插件 + 自定义模型     |
+
 ### `--websearch`
 
-通过本地代理服务器启用 WebSearch 功能，拦截 `/api/tools/exa/search` 请求。
+通过本地代理服务器启用 **外部搜索提供商** 的 WebSearch 功能。
 
-**用途**：无需 Factory.ai 认证即可使用 WebSearch 功能。
+**用途**：使用第三方搜索 API 实现 WebSearch。
 
 **特性**：
 
-- **多搜索提供商**：支持自动降级
+- **多搜索提供商**：自动降级（Smithery > Google PSE > Serper > Brave > SearXNG > DuckDuckGo）
 - **每实例独立代理**：每个 droid 实例运行自己的代理，自动分配端口
 - **自动清理**：droid 退出时代理自动停止
 - **转发目标**：使用 `--api-base` 配合 `--websearch` 可将非搜索请求转发到自定义后端
@@ -220,6 +230,71 @@ npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # 直接运行 - 一切都是自动的！
 droid-search
+```
+
+### `--websearch-proxy`
+
+通过 **模型原生 web_search 能力**（如 Claude 的 `web_search_20250305` 工具）启用 WebSearch。
+
+**用途**：使用 LLM 提供商内置的网页搜索，而非外部提供商。
+
+**需求**：
+
+1. 在 `~/.factory/settings.json` 中配置支持的 provider（`anthropic` 或 `openai`）的 **自定义模型**
+2. **Proxy 插件**（[jixoai/proxy](https://github.com/jixoai/proxy)）处理 Claude Code 格式转换
+
+**特性**：
+
+- 从 `~/.factory/settings.json` 读取模型配置
+- 支持 Anthropic（`web_search_20250305`）和 OpenAI（`web_search`）原生工具
+- 自动检测当前模型的 provider
+- 无需外部 API 密钥（使用 LLM 提供商的搜索）
+
+**使用方法**：
+
+```bash
+# 创建带原生 websearch 的别名（需要 proxy 插件）
+npx droid-patch --is-custom --skip-login --websearch-proxy droid-native
+
+# 配合推理强度使用
+npx droid-patch --is-custom --skip-login --reasoning-effort --websearch-proxy droid-full
+
+# 调试模式
+DROID_SEARCH_DEBUG=1 droid-native
+```
+
+**Proxy 插件设置**：
+
+`--websearch-proxy` 模式需要 [jixoai/proxy](https://github.com/jixoai/proxy) 插件在 Claude Code 格式和标准 Anthropic API 格式之间转换。
+
+```bash
+# 克隆并设置 proxy
+git clone https://github.com/jixoai/proxy.git
+cd proxy
+
+# 安装并运行（详见 proxy README）
+pnpm install
+pnpm dev
+```
+
+在 `~/.factory/settings.json` 中配置自定义模型：
+
+```json
+{
+  "customModels": [
+    {
+      "model": "claude-sonnet-4-20250514",
+      "id": "custom:Claude-Proxy-0",
+      "baseUrl": "http://127.0.0.1:20002/droid",
+      "apiKey": "your-api-key",
+      "displayName": "Claude [proxy]",
+      "provider": "anthropic"
+    }
+  ],
+  "sessionDefaultSettings": {
+    "model": "custom:Claude-Proxy-0"
+  }
+}
 ```
 
 ### `--reasoning-effort`

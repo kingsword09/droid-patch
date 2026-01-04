@@ -62,8 +62,9 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                         |
 | `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
 | `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
-| `--websearch`         | Inject local WebSearch proxy with multiple search providers                                                  |
-| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch`)                                          |
+| `--websearch`         | External providers mode: Smithery, Google PSE, Serper, Brave, SearXNG, DuckDuckGo                            |
+| `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
+| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
 | `--dry-run`           | Verify patches without actually modifying the binary                                                         |
@@ -195,15 +196,24 @@ npx droid-patch --websearch --api-base "http://127.0.0.1:20002" droid-custom
 npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-custom
 ```
 
+### `--websearch` vs `--websearch-proxy`
+
+**Important**: `--websearch` and `--websearch-proxy` are **mutually exclusive** - you can only use one at a time.
+
+| Mode               | Description                              | Requires                    |
+| ------------------ | ---------------------------------------- | --------------------------- |
+| `--websearch`      | External search providers                | Environment variables       |
+| `--websearch-proxy`| Model's native web_search capability     | Proxy plugin + custom model |
+
 ### `--websearch`
 
-Enables WebSearch functionality through a local proxy server that intercepts `/api/tools/exa/search` requests.
+Enables WebSearch via **external search providers** through a local proxy server.
 
-**Purpose**: Enable WebSearch functionality without Factory.ai authentication.
+**Purpose**: Enable WebSearch using third-party search APIs.
 
 **Features**:
 
-- **Multiple search providers** with automatic fallback
+- **Multiple search providers** with automatic fallback (Smithery > Google PSE > Serper > Brave > SearXNG > DuckDuckGo)
 - **Per-instance proxy**: Each droid instance runs its own proxy on an auto-assigned port
 - **Auto-cleanup**: Proxy automatically stops when droid exits
 - **Forward target**: Use `--api-base` with `--websearch` to forward non-search requests to a custom backend
@@ -220,6 +230,71 @@ npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
 
 # Just run it - everything is automatic!
 droid-search
+```
+
+### `--websearch-proxy`
+
+Enables WebSearch via **model's native web_search capability** (e.g., Claude's `web_search_20250305` tool).
+
+**Purpose**: Use the LLM provider's built-in web search instead of external providers.
+
+**Requirements**:
+
+1. **Custom model** configured in `~/.factory/settings.json` with a supported provider (`anthropic` or `openai`)
+2. **Proxy plugin** ([jixoai/proxy](https://github.com/jixoai/proxy)) to handle Claude Code format conversion
+
+**Features**:
+
+- Reads model configuration from `~/.factory/settings.json`
+- Supports Anthropic (`web_search_20250305`) and OpenAI (`web_search`) native tools
+- Automatically detects current model's provider
+- No external API keys needed (uses your LLM provider's search)
+
+**Usage**:
+
+```bash
+# Create alias with native websearch (requires proxy plugin)
+npx droid-patch --is-custom --skip-login --websearch-proxy droid-native
+
+# Combine with reasoning effort
+npx droid-patch --is-custom --skip-login --reasoning-effort --websearch-proxy droid-full
+
+# Debug mode
+DROID_SEARCH_DEBUG=1 droid-native
+```
+
+**Proxy Plugin Setup**:
+
+The `--websearch-proxy` mode requires the [jixoai/proxy](https://github.com/jixoai/proxy) plugin to convert between Claude Code format and standard Anthropic API format.
+
+```bash
+# Clone and setup the proxy
+git clone https://github.com/jixoai/proxy.git
+cd proxy
+
+# Install and run (see proxy README for details)
+pnpm install
+pnpm dev
+```
+
+Configure your custom model in `~/.factory/settings.json`:
+
+```json
+{
+  "customModels": [
+    {
+      "model": "claude-sonnet-4-20250514",
+      "id": "custom:Claude-Proxy-0",
+      "baseUrl": "http://127.0.0.1:20002/droid",
+      "apiKey": "your-api-key",
+      "displayName": "Claude [proxy]",
+      "provider": "anthropic"
+    }
+  ],
+  "sessionDefaultSettings": {
+    "model": "custom:Claude-Proxy-0"
+  }
+}
 ```
 
 ### `--reasoning-effort`
@@ -600,12 +675,18 @@ droid-search
 ## Examples
 
 ```bash
-# Quick start: create droid with websearch
+# Quick start: create droid with websearch (external providers)
 npx droid-patch --websearch droid-search
 droid-search  # Just works!
 
-# Full-featured droid
+# Full-featured droid with external websearch
 npx droid-patch --is-custom --skip-login --websearch --reasoning-effort droid-full
+
+# Native websearch via proxy plugin (requires jixoai/proxy)
+npx droid-patch --is-custom --skip-login --websearch-proxy droid-native
+
+# Native websearch + reasoning effort
+npx droid-patch --is-custom --skip-login --reasoning-effort --websearch-proxy droid-native-full
 
 # Standalone mode: websearch + mock non-LLM APIs
 npx droid-patch --websearch --standalone droid-local
@@ -613,8 +694,11 @@ npx droid-patch --websearch --standalone droid-local
 # Privacy mode: disable telemetry
 npx droid-patch --disable-telemetry droid-private
 
-# Full local setup: all features combined
+# Full local setup: all features combined (external websearch)
 npx droid-patch --is-custom --skip-login --websearch --standalone --disable-telemetry droid-full-local
+
+# Full local setup with native websearch
+npx droid-patch --is-custom --skip-login --websearch-proxy --standalone --disable-telemetry droid-native-local
 
 # Websearch with custom backend
 npx droid-patch --websearch --api-base=http://127.0.0.1:20002 droid-custom
