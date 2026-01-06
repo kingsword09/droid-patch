@@ -850,7 +850,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             ),
             variants: [
               {
-                pattern: Buffer.from('T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)'),
+                pattern: Buffer.from(
+                  'T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)',
+                ),
                 replacement: Buffer.from(
                   'T!="none"&&T!="off"&&0&&C.supportedReasoningEfforts.includes(T)',
                 ),

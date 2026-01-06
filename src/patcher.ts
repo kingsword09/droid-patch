@@ -76,7 +76,10 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     console.log(styleText("white", `[*] Checking patch: ${styleText("yellow", patch.name)}`));
     console.log(styleText("gray", `    ${patch.description}`));
 
-    const variants = [{ pattern: patch.pattern, replacement: patch.replacement }, ...(patch.variants || [])];
+    const variants = [
+      { pattern: patch.pattern, replacement: patch.replacement },
+      ...(patch.variants || []),
+    ];
 
     // Search in the working buffer (which may have earlier patches applied)
     let positions: number[] = [];
@@ -224,7 +227,10 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
   let allVerified = true;
   for (const patch of patches) {
-    const variants = [{ pattern: patch.pattern, replacement: patch.replacement }, ...(patch.variants || [])];
+    const variants = [
+      { pattern: patch.pattern, replacement: patch.replacement },
+      ...(patch.variants || []),
+    ];
 
     let oldCount = 0;
     let newCount = 0;
