@@ -8,6 +8,10 @@ export interface Patch {
   description: string;
   pattern: Buffer;
   replacement: Buffer;
+  variants?: Array<{
+    pattern: Buffer;
+    replacement: Buffer;
+  }>;
 }
 
 export interface PatchOptions {
@@ -72,8 +76,18 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     console.log(styleText("white", `[*] Checking patch: ${styleText("yellow", patch.name)}`));
     console.log(styleText("gray", `    ${patch.description}`));
 
+    const variants = [{ pattern: patch.pattern, replacement: patch.replacement }, ...(patch.variants || [])];
+
     // Search in the working buffer (which may have earlier patches applied)
-    const positions = findAllPositions(workingBuffer, patch.pattern);
+    let positions: number[] = [];
+    let matchedVariant: (typeof variants)[number] | undefined;
+    for (const variant of variants) {
+      positions = findAllPositions(workingBuffer, variant.pattern);
+      if (positions.length > 0) {
+        matchedVariant = variant;
+        break;
+      }
+    }
 
     if (positions.length === 0) {
       console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
@@ -81,15 +95,18 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
         name: patch.name,
         found: 0,
         success: false,
-        alreadyPatched: workingBuffer.includes(patch.replacement),
+        alreadyPatched: variants.some((v) => workingBuffer.includes(v.replacement)),
       });
 
-      const replacementPositions = findAllPositions(workingBuffer, patch.replacement);
-      if (replacementPositions.length > 0) {
+      let totalReplacementPositions = 0;
+      for (const variant of variants) {
+        totalReplacementPositions += findAllPositions(workingBuffer, variant.replacement).length;
+      }
+      if (totalReplacementPositions > 0) {
         console.log(
           styleText(
             "blue",
-            `    ✓ Found ${replacementPositions.length} occurrences of patched pattern`,
+            `    ✓ Found ${totalReplacementPositions} occurrences of patched pattern`,
           ),
         );
         console.log(styleText("blue", `    ✓ Binary appears to be already patched`));
@@ -99,11 +116,15 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
       continue;
     }
 
+    if (!matchedVariant) {
+      throw new Error(`Internal error: matchedVariant not set for patch ${patch.name}`);
+    }
+
     console.log(styleText("green", `    ✓ Found ${positions.length} occurrences`));
 
     if (verbose) {
       for (const pos of positions.slice(0, 5)) {
-        const context = getContext(workingBuffer, pos, patch.pattern.length, 25);
+        const context = getContext(workingBuffer, pos, matchedVariant.pattern.length, 25);
         console.log(
           styleText("gray", `      @ 0x${pos.toString(16).padStart(8, "0")}: ...${context}...`),
         );
@@ -116,7 +137,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     // Apply patch immediately to working buffer so later patches see updated content
     if (!dryRun) {
       for (const pos of positions) {
-        patch.replacement.copy(workingBuffer, pos);
+        matchedVariant.replacement.copy(workingBuffer, pos);
       }
     }
 
@@ -203,8 +224,14 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
   let allVerified = true;
   for (const patch of patches) {
-    const oldCount = findAllPositions(verifyBuffer, patch.pattern).length;
-    const newCount = findAllPositions(verifyBuffer, patch.replacement).length;
+    const variants = [{ pattern: patch.pattern, replacement: patch.replacement }, ...(patch.variants || [])];
+
+    let oldCount = 0;
+    let newCount = 0;
+    for (const variant of variants) {
+      oldCount += findAllPositions(verifyBuffer, variant.pattern).length;
+      newCount += findAllPositions(verifyBuffer, variant.replacement).length;
+    }
 
     if (oldCount === 0) {
       console.log(styleText("green", `    ✓ ${patch.name}: Verified (${newCount} patched)`));

@@ -143,8 +143,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
-    // --websearch-proxy uses native provider websearch (requires proxy plugin)
-    const websearchProxyEnabled = websearchProxy;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
     const autoHigh = options["auto-high"] as boolean;
@@ -457,14 +455,22 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       // Bypass reasoning effort validation to allow settings.json override
       // This allows "xhigh" in settings.json to work even though default is "high"
-      // v0.39.0+: T!=="none"&&T!=="off"&&!W.supportedReasoningEfforts.includes(T)
-      // Changed:  T!="none"&&T!="off"&&0&&W... - use != (2 chars less) + 0&& (2 chars more) = same length
+      // v0.39.0+: T!=="none"&&T!=="off"&&!X.supportedReasoningEfforts.includes(T)
+      // Changed:  T!="none"&&T!="off"&&0&&X... - use != (2 chars less) + 0&& (2 chars more) = same length
       // Logic: && 0 && makes entire condition always false, bypassing validation
       patches.push({
         name: "reasoningEffortValidationBypass",
         description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
         pattern: Buffer.from('T!=="none"&&T!=="off"&&!W.supportedReasoningEfforts.includes(T)'),
         replacement: Buffer.from('T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)'),
+        variants: [
+          {
+            pattern: Buffer.from('T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)'),
+            replacement: Buffer.from(
+              'T!="none"&&T!="off"&&0&&C.supportedReasoningEfforts.includes(T)',
+            ),
+          },
+        ],
       });
     }
 
@@ -842,6 +848,14 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             replacement: Buffer.from(
               'T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)',
             ),
+            variants: [
+              {
+                pattern: Buffer.from('T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)'),
+                replacement: Buffer.from(
+                  'T!="none"&&T!="off"&&0&&C.supportedReasoningEfforts.includes(T)',
+                ),
+              },
+            ],
           });
         }
 
