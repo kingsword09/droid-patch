@@ -12,6 +12,9 @@ export interface Patch {
     pattern: Buffer;
     replacement: Buffer;
   }>;
+  // Regex-based matching: use $1, $2, etc. in regexReplacement for capture groups
+  regexPattern?: RegExp;
+  regexReplacement?: string;
 }
 
 export interface PatchOptions {
@@ -75,6 +78,77 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
   for (const patch of patches) {
     console.log(styleText("white", `[*] Checking patch: ${styleText("yellow", patch.name)}`));
     console.log(styleText("gray", `    ${patch.description}`));
+
+    // Handle regex-based matching
+    // For binary files, convert pattern/replacement to Buffer and use findAllPositions
+    if (patch.regexPattern && patch.regexReplacement) {
+      const content = workingBuffer.toString("utf-8");
+      const regex = new RegExp(patch.regexPattern.source, "g");
+      const matches: Array<{ charIndex: number; match: string; replacement: string }> = [];
+
+      let match;
+      while ((match = regex.exec(content)) !== null) {
+        const replacement = match[0].replace(
+          new RegExp(patch.regexPattern.source),
+          patch.regexReplacement,
+        );
+        matches.push({
+          charIndex: match.index,
+          match: match[0],
+          replacement,
+        });
+      }
+
+      if (matches.length === 0) {
+        console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
+        // Check if already patched by looking for a sample replacement pattern
+        const sampleReplacement = patch.regexReplacement.replace(/\$\d+/g, "X");
+        const alreadyPatched = content.includes(sampleReplacement.slice(0, 20));
+        results.push({
+          name: patch.name,
+          found: 0,
+          success: alreadyPatched,
+          alreadyPatched,
+        });
+        if (alreadyPatched) {
+          console.log(styleText("blue", `    ✓ Binary appears to be already patched`));
+        }
+        continue;
+      }
+
+      console.log(styleText("green", `    ✓ Found ${matches.length} occurrences (regex)`));
+
+      if (!dryRun) {
+        // Apply regex replacement using Buffer.indexOf for accurate byte positions
+        for (const { match, replacement } of matches) {
+          const matchBuffer = Buffer.from(match, "utf-8");
+          const replacementBuffer = Buffer.from(replacement, "utf-8");
+
+          if (matchBuffer.length !== replacementBuffer.length) {
+            console.log(
+              styleText(
+                "yellow",
+                `    ! Warning: Length mismatch: ${matchBuffer.length} vs ${replacementBuffer.length}`,
+              ),
+            );
+          }
+
+          // Find the actual byte position in the buffer
+          const bytePos = workingBuffer.indexOf(matchBuffer);
+          if (bytePos !== -1) {
+            replacementBuffer.copy(workingBuffer, bytePos, 0, replacementBuffer.length);
+          }
+        }
+      }
+
+      results.push({
+        name: patch.name,
+        found: matches.length,
+        positions: matches.map((m) => m.charIndex),
+        success: true,
+      });
+      continue;
+    }
 
     const variants = [
       { pattern: patch.pattern, replacement: patch.replacement },
@@ -227,6 +301,22 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
   let allVerified = true;
   for (const patch of patches) {
+    // Handle regex-based patches
+    if (patch.regexPattern && patch.regexReplacement) {
+      const content = verifyBuffer.toString("utf-8");
+      const oldMatches = [...content.matchAll(new RegExp(patch.regexPattern.source, "g"))];
+      // For verification, just check that the original pattern is no longer present
+      if (oldMatches.length === 0) {
+        console.log(styleText("green", `    ✓ ${patch.name}: Verified (regex)`));
+      } else {
+        console.log(
+          styleText("red", `    ✗ ${patch.name}: ${oldMatches.length} occurrences not patched`),
+        );
+        allVerified = false;
+      }
+      continue;
+    }
+
     const variants = [
       { pattern: patch.pattern, replacement: patch.replacement },
       ...(patch.variants || []),
@@ -235,8 +325,12 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     let oldCount = 0;
     let newCount = 0;
     for (const variant of variants) {
-      oldCount += findAllPositions(verifyBuffer, variant.pattern).length;
-      newCount += findAllPositions(verifyBuffer, variant.replacement).length;
+      if (variant.pattern.length > 0) {
+        oldCount += findAllPositions(verifyBuffer, variant.pattern).length;
+      }
+      if (variant.replacement.length > 0) {
+        newCount += findAllPositions(verifyBuffer, variant.replacement).length;
+      }
     }
 
     if (oldCount === 0) {

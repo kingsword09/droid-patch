@@ -455,22 +455,20 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       // Bypass reasoning effort validation to allow settings.json override
       // This allows "xhigh" in settings.json to work even though default is "high"
-      // v0.39.0+: T!=="none"&&T!=="off"&&!X.supportedReasoningEfforts.includes(T)
-      // Changed:  T!="none"&&T!="off"&&0&&X... - use != (2 chars less) + 0&& (2 chars more) = same length
+      // Pattern varies by version:
+      //   v0.39.0+: T!=="none"&&T!=="off"&&!X.supportedReasoningEfforts.includes(T)
+      //   v0.43.0+: T!=="none"&&T!=="off"&&!R.reasoningEffort.supported.includes(T)
+      // Using regex to match any single-letter variable (A-Z) and preserve property path
       // Logic: && 0 && makes entire condition always false, bypassing validation
       patches.push({
         name: "reasoningEffortValidationBypass",
         description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
-        pattern: Buffer.from('T!=="none"&&T!=="off"&&!W.supportedReasoningEfforts.includes(T)'),
-        replacement: Buffer.from('T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)'),
-        variants: [
-          {
-            pattern: Buffer.from('T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)'),
-            replacement: Buffer.from(
-              'T!="none"&&T!="off"&&0&&C.supportedReasoningEfforts.includes(T)',
-            ),
-          },
-        ],
+        pattern: Buffer.from(""), // Not used when regexPattern is set
+        replacement: Buffer.from(""),
+        // Regex captures: $1 = variable letter, $2 = property path (supportedReasoningEfforts or reasoningEffort.supported)
+        regexPattern:
+          /T!=="none"&&T!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(T\)/g,
+        regexReplacement: 'T!="none"&&T!="off"&&0&&$1.$2.includes(T)',
       });
     }
 
@@ -844,20 +842,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           patches.push({
             name: "reasoningEffortValidationBypass",
             description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
-            pattern: Buffer.from('T!=="none"&&T!=="off"&&!W.supportedReasoningEfforts.includes(T)'),
-            replacement: Buffer.from(
-              'T!="none"&&T!="off"&&0&&W.supportedReasoningEfforts.includes(T)',
-            ),
-            variants: [
-              {
-                pattern: Buffer.from(
-                  'T!=="none"&&T!=="off"&&!C.supportedReasoningEfforts.includes(T)',
-                ),
-                replacement: Buffer.from(
-                  'T!="none"&&T!="off"&&0&&C.supportedReasoningEfforts.includes(T)',
-                ),
-              },
-            ],
+            pattern: Buffer.from(""), // Not used when regexPattern is set
+            replacement: Buffer.from(""),
+            regexPattern:
+              /T!=="none"&&T!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(T\)/g,
+            regexReplacement: 'T!="none"&&T!="off"&&0&&$1.$2.includes(T)',
           });
         }
 
