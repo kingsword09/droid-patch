@@ -857,7 +857,8 @@ export type FilterFlag =
   | "api-base"
   | "reasoning-effort"
   | "disable-telemetry"
-  | "standalone";
+  | "standalone"
+  | "spec-model-custom";
 
 export interface RemoveFilterOptions {
   /** Remove aliases created by this droid-patch version */
@@ -990,6 +991,9 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
             break;
           case "standalone":
             if (!patches.standalone) matches = false;
+            break;
+          case "spec-model-custom":
+            if (!patches.specModelCustom) matches = false;
             break;
         }
         if (!matches) break;

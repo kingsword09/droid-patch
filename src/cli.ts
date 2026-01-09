@@ -126,6 +126,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--auto-high",
     "Set default autonomy mode to auto-high (bypass settings.json race condition)",
   )
+  .option(
+    "--spec-model-custom",
+    "Enable custom models as spec model (show in UI selector + bypass validation)",
+  )
   .option("--dry-run", "Verify patches without actually modifying the binary")
   .option("-p, --path <path>", "Path to the droid binary")
   .option("-o, --output <dir>", "Output directory for patched binary")
@@ -146,6 +150,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
     const autoHigh = options["auto-high"] as boolean;
+    const specModelCustom = options["spec-model-custom"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
     const outputDir = options.output as string | undefined;
@@ -161,6 +166,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !!reasoningEffort ||
       !!noTelemetry ||
       !!autoHigh ||
+      !!specModelCustom ||
       (!!apiBase && !websearch && !websearchProxy);
 
     // Check for conflicting flags
@@ -297,7 +303,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !websearch &&
       !reasoningEffort &&
       !noTelemetry &&
-      !autoHigh
+      !autoHigh &&
+      !specModelCustom
     ) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
@@ -319,6 +326,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       );
       console.log(
         styleText("gray", "  --auto-high         Set default autonomy mode to auto-high"),
+      );
+      console.log(
+        styleText("gray", "  --spec-model-custom Enable custom models as spec model"),
       );
       console.log(
         styleText("gray", "  --standalone        Standalone mode: mock non-LLM Factory APIs"),
@@ -521,6 +531,31 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       });
     }
 
+    // Add spec-model-custom patches: enable custom models as spec model
+    // Patch 1: Show custom models in spec model selector UI
+    //   Original: Y=Q?X.filter((P)=>Q.includes(P.id)):X  (37 chars)
+    //   Changed:  Y=0?X.filter((P)=>Q.includes(P.id)):X  (37 chars)
+    //   Effect: 0 is always false, so Y=X (show all custom models)
+    // Patch 2: Bypass compatibilityGroup validation for custom spec models
+    //   Original: W=WRA(A),K=WRA(R);if(W&&W!==K){  (31 chars)
+    //   Changed:  W=WRA(A),K=WRA(R);if(K&&W!==K){  (31 chars)
+    //   Effect: Skip check when K (spec model's compatibilityGroup) is undefined
+    if (specModelCustom) {
+      patches.push({
+        name: "specModelCustomUIShow",
+        description: "Show all custom models in spec model selector (bypass filter)",
+        pattern: Buffer.from("Y=Q?X.filter((P)=>Q.includes(P.id)):X"),
+        replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
+      });
+
+      patches.push({
+        name: "specModelCustomValidation",
+        description: "Bypass compatibilityGroup check for custom spec models",
+        pattern: Buffer.from("W=WRA(A),K=WRA(R);if(W&&W!==K){"),
+        replacement: Buffer.from("W=WRA(A),K=WRA(R);if(K&&W!==K){"),
+      });
+    }
+
     try {
       const result = await patchDroid({
         inputPath: path,
@@ -606,6 +641,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
             autoHigh: !!autoHigh,
+            specModelCustom: !!specModelCustom,
           },
           {
             droidPatchVersion: version,
@@ -640,7 +676,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone, spec-model-custom)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
@@ -657,6 +693,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         "reasoning-effort",
         "disable-telemetry",
         "standalone",
+        "spec-model-custom",
       ];
       if (!allowedFlags.includes(flagRaw as FilterFlag)) {
         console.error(styleText("red", `Error: Invalid --flag value: ${flagRaw}`));
@@ -877,6 +914,21 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: 'Hardcode getCurrentAutonomyMode() to return "auto-high"',
             pattern: Buffer.from("getCurrentAutonomyMode(){return this.autonomyMode}"),
             replacement: Buffer.from('getCurrentAutonomyMode(){return"auto-high"       }'),
+          });
+        }
+
+        if (meta.patches.specModelCustom) {
+          patches.push({
+            name: "specModelCustomUIShow",
+            description: "Show all custom models in spec model selector (bypass filter)",
+            pattern: Buffer.from("Y=Q?X.filter((P)=>Q.includes(P.id)):X"),
+            replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
+          });
+          patches.push({
+            name: "specModelCustomValidation",
+            description: "Bypass compatibilityGroup check for custom spec models",
+            pattern: Buffer.from("W=WRA(A),K=WRA(R);if(W&&W!==K){"),
+            replacement: Buffer.from("W=WRA(A),K=WRA(R);if(K&&W!==K){"),
           });
         }
 
