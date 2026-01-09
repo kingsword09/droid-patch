@@ -327,9 +327,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(
         styleText("gray", "  --auto-high         Set default autonomy mode to auto-high"),
       );
-      console.log(
-        styleText("gray", "  --spec-model-custom Enable custom models as spec model"),
-      );
+      console.log(styleText("gray", "  --spec-model-custom Enable custom models as spec model"));
       console.log(
         styleText("gray", "  --standalone        Standalone mode: mock non-LLM Factory APIs"),
       );
