@@ -546,11 +546,16 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
       });
 
+      // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
+      // Pattern: W=funcName(A),K=funcName(R);if(W&&W!==K){ -> if(K&&W!==K){ to skip when K is undefined
       patches.push({
         name: "specModelCustomValidation",
         description: "Bypass compatibilityGroup check for custom spec models",
-        pattern: Buffer.from("W=WRA(A),K=WRA(R);if(W&&W!==K){"),
-        replacement: Buffer.from("W=WRA(A),K=WRA(R);if(K&&W!==K){"),
+        pattern: Buffer.from(""),
+        replacement: Buffer.from(""),
+        regexPattern:
+          /([A-Z])=([a-zA-Z_$][a-zA-Z0-9_$]*)\(A\),([A-Z])=\2\(R\);if\(\1&&\1!==\3\)\{/g,
+        regexReplacement: "$1=$2(A),$3=$2(R);if($3&&$1!==$3){",
       });
     }
 
@@ -922,11 +927,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             pattern: Buffer.from("Y=Q?X.filter((P)=>Q.includes(P.id)):X"),
             replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
           });
+          // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
           patches.push({
             name: "specModelCustomValidation",
             description: "Bypass compatibilityGroup check for custom spec models",
-            pattern: Buffer.from("W=WRA(A),K=WRA(R);if(W&&W!==K){"),
-            replacement: Buffer.from("W=WRA(A),K=WRA(R);if(K&&W!==K){"),
+            pattern: Buffer.from(""),
+            replacement: Buffer.from(""),
+            regexPattern:
+              /([A-Z])=([a-zA-Z_$][a-zA-Z0-9_$]*)\(A\),([A-Z])=\2\(R\);if\(\1&&\1!==\3\)\{/g,
+            regexReplacement: "$1=$2(A),$3=$2(R);if($3&&$1!==$3){",
           });
         }
 

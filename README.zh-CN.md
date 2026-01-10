@@ -67,6 +67,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
+| `--spec-model-custom` | 允许自定义模型作为 spec 模型（在 UI 选择器中显示 + 绕过验证）                                   |
 | `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
 | `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                                              |
 | `-o, --output <dir>`  | 修补后二进制文件的输出目录（直接创建文件，不创建别名）                                          |
@@ -392,6 +393,29 @@ npx droid-patch --disable-telemetry droid-private
 
 # 与其他补丁组合
 npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
+```
+
+### `--spec-model-custom`
+
+允许自定义模型作为 spec 模式中的 spec 模型使用。
+
+**用途**：默认情况下，droid 只允许官方模型（如 Claude、GPT）作为 spec 模型。此补丁使自定义模型出现在 spec 模型选择器中，并绕过兼容性验证。
+
+**工作原理**：
+
+- 在 spec 模型选择器 UI 中显示所有自定义模型（绕过隐藏它们的过滤器）
+- 绕过 `compatibilityGroup` 验证检查（使用正则表达式匹配以处理不同版本间混淆后的函数名变化）
+
+**兼容性**：需要 droid 0.45.0 或更高版本（compatibilityGroup 功能在此版本中添加）。
+
+**使用方法**：
+
+```bash
+# 允许自定义模型作为 spec 模型
+npx droid-patch --spec-model-custom droid-spec
+
+# 与其他补丁组合以获得完整的自定义模型支持
+npx droid-patch --is-custom --reasoning-effort --spec-model-custom droid-custom-full
 ```
 
 ---

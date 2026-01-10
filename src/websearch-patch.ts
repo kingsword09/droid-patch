@@ -147,7 +147,7 @@ should_passthrough() {
   for arg in "$@"; do
     if [ "$arg" = "--" ]; then end_opts=1; continue; fi
     if [ "$end_opts" -eq 0 ] && [[ "$arg" == -* ]]; then continue; fi
-    case "$arg" in help|version|completion|completions|exec) return 0 ;; esac
+    case "$arg" in help|version|completion|completions|exec|plugin) return 0 ;; esac
     break
   done
   return 1
