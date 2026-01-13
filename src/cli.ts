@@ -542,8 +542,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       patches.push({
         name: "specModelCustomUIShow",
         description: "Show all custom models in spec model selector (bypass filter)",
-        pattern: Buffer.from("Y=Q?X.filter((P)=>Q.includes(P.id)):X"),
-        replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
+        pattern: Buffer.from(""), // Not used when regexPattern is set
+        replacement: Buffer.from(""),
+        // v0.47.0 changed minified variable names (e.g., X/P -> Z/E), so use regex.
+        // Pattern: Y=Q?Z.filter((E)=>Q.includes(E.id)):Z -> Y=0?... (disable filter)
+        regexPattern:
+          /([A-Za-z_$])=([A-Za-z_$])\?([A-Za-z_$])\.filter\(\(([A-Za-z_$])\)=>\2\.includes\(\4\.id\)\):\3/g,
+        regexReplacement: "$1=0?$3.filter(($4)=>$2.includes($4.id)):$3",
       });
 
       // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
@@ -924,8 +929,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           patches.push({
             name: "specModelCustomUIShow",
             description: "Show all custom models in spec model selector (bypass filter)",
-            pattern: Buffer.from("Y=Q?X.filter((P)=>Q.includes(P.id)):X"),
-            replacement: Buffer.from("Y=0?X.filter((P)=>Q.includes(P.id)):X"),
+            pattern: Buffer.from(""), // Not used when regexPattern is set
+            replacement: Buffer.from(""),
+            // v0.47.0 changed minified variable names (e.g., X/P -> Z/E), so use regex.
+            // Pattern: Y=Q?Z.filter((E)=>Q.includes(E.id)):Z -> Y=0?... (disable filter)
+            regexPattern:
+              /([A-Za-z_$])=([A-Za-z_$])\?([A-Za-z_$])\.filter\(\(([A-Za-z_$])\)=>\2\.includes\(\4\.id\)\):\3/g,
+            regexReplacement: "$1=0?$3.filter(($4)=>$2.includes($4.id)):$3",
           });
           // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
           patches.push({
