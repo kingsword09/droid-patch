@@ -46,8 +46,6 @@ export interface AliasMetadata {
     noTelemetry?: boolean;
     /** Standalone mode: mock non-LLM Factory APIs */
     standalone?: boolean;
-    /** Hardcode autonomy mode to auto-high */
-    autoHigh?: boolean;
     /** Enable custom models as spec model (show in UI + bypass validation) */
     specModelCustom?: boolean;
   };
@@ -187,7 +185,6 @@ export function formatPatches(patches: AliasMetadata["patches"]): string {
   if (patches.reasoningEffort) applied.push("reasoningEffort");
   if (patches.noTelemetry) applied.push("noTelemetry");
   if (patches.standalone) applied.push("standalone");
-  if (patches.autoHigh) applied.push("autoHigh");
   if (patches.specModelCustom) applied.push("specModelCustom");
   return applied.length > 0 ? applied.join(", ") : "(none)";
 }

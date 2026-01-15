@@ -122,10 +122,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--disable-telemetry",
     "Disable telemetry and Sentry error reporting (block data uploads)",
   )
-  .option(
-    "--auto-high",
-    "Set default autonomy mode to auto-high (bypass settings.json race condition)",
-  )
+
   .option(
     "--spec-model-custom",
     "Enable custom models as spec model (show in UI selector + bypass validation)",
@@ -149,7 +146,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
-    const autoHigh = options["auto-high"] as boolean;
+
     const specModelCustom = options["spec-model-custom"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
@@ -165,7 +162,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !!skipLogin ||
       !!reasoningEffort ||
       !!noTelemetry ||
-      !!autoHigh ||
       !!specModelCustom ||
       (!!apiBase && !websearch && !websearchProxy);
 
@@ -303,7 +299,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !websearch &&
       !reasoningEffort &&
       !noTelemetry &&
-      !autoHigh &&
       !specModelCustom
     ) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
@@ -323,9 +318,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       );
       console.log(
         styleText("gray", "  --disable-telemetry Disable telemetry and Sentry error reporting"),
-      );
-      console.log(
-        styleText("gray", "  --auto-high         Set default autonomy mode to auto-high"),
       );
       console.log(styleText("gray", "  --spec-model-custom Enable custom models as spec model"));
       console.log(
@@ -515,20 +507,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       });
     }
 
-    // Add auto-high autonomy patch: hardcode getCurrentAutonomyMode to return "auto-high"
-    // This bypasses the race condition where AutonomyManager.initialize() runs before
-    // SettingsService has loaded settings.json, causing the default "normal" to be used.
-    // Pattern (50 chars): getCurrentAutonomyMode(){return this.autonomyMode}
-    // Replace (50 chars): getCurrentAutonomyMode(){return"auto-high"       }
-    if (autoHigh) {
-      patches.push({
-        name: "autoHighAutonomy",
-        description: 'Hardcode getCurrentAutonomyMode() to return "auto-high"',
-        pattern: Buffer.from("getCurrentAutonomyMode(){return this.autonomyMode}"),
-        replacement: Buffer.from('getCurrentAutonomyMode(){return"auto-high"       }'),
-      });
-    }
-
     // Add spec-model-custom patches: enable custom models as spec model
     // Patch 1: Show custom models in spec model selector UI
     //   Original: Y=Q?X.filter((P)=>Q.includes(P.id)):X  (37 chars)
@@ -648,7 +626,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
-            autoHigh: !!autoHigh,
             specModelCustom: !!specModelCustom,
           },
           {
@@ -913,15 +890,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: "Make flushToWeb always return (!0|| = always true)",
             pattern: Buffer.from("this.webEvents.length===0"),
             replacement: Buffer.from("!0||this.webEvents.length"),
-          });
-        }
-
-        if (meta.patches.autoHigh) {
-          patches.push({
-            name: "autoHighAutonomy",
-            description: 'Hardcode getCurrentAutonomyMode() to return "auto-high"',
-            pattern: Buffer.from("getCurrentAutonomyMode(){return this.autonomyMode}"),
-            replacement: Buffer.from('getCurrentAutonomyMode(){return"auto-high"       }'),
           });
         }
 
