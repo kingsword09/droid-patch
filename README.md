@@ -74,6 +74,40 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--no-backup`         | Skip creating backup of original binary                                                                      |
 | `-v, --verbose`       | Enable verbose output                                                                                        |
 
+### Manage Custom Models
+
+```bash
+# List all custom models
+npx droid-patch list-models
+
+# Add model interactively
+npx droid-patch add-model
+
+# Add model via command line
+npx droid-patch add-model \
+  -m "claude-sonnet-4-20250514" \
+  -n "Sonnet [proxy]" \
+  -u "http://127.0.0.1:20002/droid" \
+  -k "your-api-key" \
+  -p "anthropic"
+
+# Insert model at specific position
+npx droid-patch add-model -i 0  # Interactive, insert at position 0
+
+# Remove model (supports index, ID, or displayName)
+npx droid-patch remove-model 0                    # By index
+npx droid-patch remove-model "custom:Sonnet-[proxy]-1"  # By ID
+npx droid-patch remove-model "Sonnet [proxy]"    # By display name
+```
+
+**Model ID Format**: `custom:{DisplayName}-{index}`
+
+- Spaces in `DisplayName` are replaced with `-`
+- `index` is the position in the array (starting from 0)
+- Example: `displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
+
+**Important**: When deleting or inserting models, subsequent model IDs are automatically updated (because index changes).
+
 ### Manage Aliases and Files
 
 ```bash
@@ -285,18 +319,24 @@ Configure your custom model in `~/.factory/settings.json`:
   "customModels": [
     {
       "model": "claude-sonnet-4-20250514",
-      "id": "custom:Claude-Proxy-0",
+      "id": "custom:Opus-[proxy]-0",
       "baseUrl": "http://127.0.0.1:20002/droid",
       "apiKey": "your-api-key",
-      "displayName": "Claude [proxy]",
+      "displayName": "Opus [proxy]",
       "provider": "anthropic"
     }
   ],
   "sessionDefaultSettings": {
-    "model": "custom:Claude-Proxy-0"
+    "model": "custom:Opus-[proxy]-0"
   }
 }
 ```
+
+**Important**: The `id` field must match the `displayName` pattern:
+
+- Format: `custom:{DisplayName}-{index}` where spaces are replaced with `-`
+- Example: `displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
+- The trailing number (`-0`) is the index (starting from 0)
 
 ### `--reasoning-effort`
 
