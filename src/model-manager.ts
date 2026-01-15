@@ -85,11 +85,7 @@ function rebuildModelIds(models: CustomModel[]): CustomModel[] {
 /**
  * Update default model reference if needed
  */
-function updateDefaultModelRef(
-  settings: FactorySettings,
-  oldId: string,
-  newId: string,
-): void {
+function updateDefaultModelRef(settings: FactorySettings, oldId: string, newId: string): void {
   if (settings.sessionDefaultSettings?.model === oldId) {
     settings.sessionDefaultSettings.model = newId;
   }
@@ -153,9 +149,12 @@ export function addModel(
 /**
  * Remove a custom model by index, ID, or displayName
  */
-export function removeModel(
-  identifier: string,
-): { success: boolean; removed?: CustomModel; message: string; updatedModels?: { oldId: string; newId: string; displayName: string }[] } {
+export function removeModel(identifier: string): {
+  success: boolean;
+  removed?: CustomModel;
+  message: string;
+  updatedModels?: { oldId: string; newId: string; displayName: string }[];
+} {
   const settings = loadSettings();
 
   if (!settings.customModels || settings.customModels.length === 0) {
@@ -273,9 +272,7 @@ export function printModelsList(): void {
       const defaultMark = isDefault ? styleText("green", " [DEFAULT]") : "";
       const indexMark = styleText("gray", `[${i}]`);
 
-      console.log(
-        `  ${indexMark} ${styleText(["cyan", "bold"], model.displayName)}${defaultMark}`,
-      );
+      console.log(`  ${indexMark} ${styleText(["cyan", "bold"], model.displayName)}${defaultMark}`);
       console.log(styleText("gray", `      ID:       ${model.id}`));
       console.log(styleText("gray", `      Model:    ${model.model}`));
       console.log(styleText("gray", `      Provider: ${model.provider}`));

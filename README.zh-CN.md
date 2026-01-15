@@ -101,6 +101,7 @@ npx droid-patch remove-model "Sonnet [proxy]"    # 按显示名称
 ```
 
 **模型 ID 格式**：`custom:{DisplayName}-{index}`
+
 - `DisplayName` 中的空格会被替换为 `-`
 - `index` 是模型在数组中的位置（从 0 开始）
 - 示例：`displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`

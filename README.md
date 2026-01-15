@@ -101,6 +101,7 @@ npx droid-patch remove-model "Sonnet [proxy]"    # By display name
 ```
 
 **Model ID Format**: `custom:{DisplayName}-{index}`
+
 - Spaces in `DisplayName` are replaced with `-`
 - `index` is the position in the array (starting from 0)
 - Example: `displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
@@ -332,6 +333,7 @@ Configure your custom model in `~/.factory/settings.json`:
 ```
 
 **Important**: The `id` field must match the `displayName` pattern:
+
 - Format: `custom:{DisplayName}-{index}` where spaces are replaced with `-`
 - Example: `displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
 - The trailing number (`-0`) is the index (starting from 0)

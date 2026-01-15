@@ -1145,7 +1145,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("-n, --name <name>", "Display name (e.g., 'Opus [proxy]')")
   .option("-u, --url <url>", "Base URL (e.g., http://127.0.0.1:20002/droid)")
   .option("-k, --key <key>", "API key")
-  .option("-p, --provider <provider>", "Provider: anthropic, openai, or generic-chat-completion-api")
+  .option(
+    "-p, --provider <provider>",
+    "Provider: anthropic, openai, or generic-chat-completion-api",
+  )
   .option("-i, --index <index>", "Insert at index (auto-assigned if not specified)")
   .action(async (options) => {
     const model = options.model as string | undefined;
@@ -1164,7 +1167,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     // If some but not all options provided, show error with usage
     if (!model || !displayName || !baseUrl || !apiKey || !providerStr) {
-      console.log(styleText("yellow", "Missing required options. Enter interactive mode or provide all options."));
+      console.log(
+        styleText(
+          "yellow",
+          "Missing required options. Enter interactive mode or provide all options.",
+        ),
+      );
       console.log();
       console.log(styleText("white", "Interactive mode:"));
       console.log(styleText("cyan", "  npx droid-patch add-model"));
@@ -1195,14 +1203,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       process.exit(1);
     }
 
-    const result = addModel(
-      model,
-      displayName,
-      baseUrl,
-      apiKey,
-      providerStr as Provider,
-      index,
-    );
+    const result = addModel(model, displayName, baseUrl, apiKey, providerStr as Provider, index);
 
     if (result.success) {
       console.log(styleText("green", `[+] ${result.message}`));
