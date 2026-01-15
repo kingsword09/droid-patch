@@ -9,17 +9,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { symlink, readlink, unlink, copyFile, chmod } from "node:fs/promises";
-import { join, basename, dirname } from "node:path";
-import { homedir } from "node:os";
+import { join, basename, dirname, delimiter } from "node:path";
+import { homedir, platform } from "node:os";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
 import { removeAliasMetadata, loadAliasMetadata, formatPatches } from "./metadata.ts";
+
+const IS_WINDOWS = platform() === "win32";
 
 const DROID_PATCH_DIR = join(homedir(), ".droid-patch");
 const ALIASES_DIR = join(DROID_PATCH_DIR, "aliases");
 const BINS_DIR = join(DROID_PATCH_DIR, "bins");
 
-const COMMON_PATH_DIRS = [
+// Unix common PATH directories
+const UNIX_PATH_DIRS = [
   join(homedir(), ".local/bin"),
   join(homedir(), "bin"),
   join(homedir(), ".bin"),
@@ -41,6 +44,15 @@ const COMMON_PATH_DIRS = [
   join(homedir(), ".fnm/current/bin"),
 ];
 
+// Windows common PATH directories
+const WINDOWS_PATH_DIRS = [
+  join(homedir(), ".droid-patch", "bin"),
+  join(homedir(), "scoop", "shims"),
+  join(homedir(), "AppData", "Local", "Programs", "bin"),
+];
+
+const COMMON_PATH_DIRS = IS_WINDOWS ? WINDOWS_PATH_DIRS : UNIX_PATH_DIRS;
+
 function ensureDirectories(): void {
   if (!existsSync(DROID_PATCH_DIR)) {
     mkdirSync(DROID_PATCH_DIR, { recursive: true });
@@ -55,15 +67,17 @@ function ensureDirectories(): void {
 
 function checkPathInclusion(): boolean {
   const pathEnv = process.env.PATH || "";
-  return pathEnv.split(":").includes(ALIASES_DIR);
+  return pathEnv.split(delimiter).some((p) => p.toLowerCase() === ALIASES_DIR.toLowerCase());
 }
 
 export function findWritablePathDir(): string | null {
   const pathEnv = process.env.PATH || "";
-  const pathDirs = pathEnv.split(":");
+  const pathDirs = pathEnv.split(delimiter);
 
   for (const dir of COMMON_PATH_DIRS) {
-    if (pathDirs.includes(dir)) {
+    // Case-insensitive comparison for Windows
+    const isInPath = pathDirs.some((p) => p.toLowerCase() === dir.toLowerCase());
+    if (isInPath) {
       try {
         if (!existsSync(dir)) {
           mkdirSync(dir, { recursive: true });
@@ -82,6 +96,10 @@ export function findWritablePathDir(): string | null {
 }
 
 function getShellConfigPath(): string {
+  if (IS_WINDOWS) {
+    // Windows doesn't use shell config files for PATH
+    return "";
+  }
   const shell = process.env.SHELL || "/bin/bash";
   const shellName = basename(shell);
 
@@ -101,6 +119,10 @@ function getShellConfigPath(): string {
 }
 
 function isPathConfigured(shellConfigPath: string): boolean {
+  if (IS_WINDOWS || !shellConfigPath) {
+    return false;
+  }
+
   if (!existsSync(shellConfigPath)) {
     return false;
   }
@@ -111,6 +133,47 @@ function isPathConfigured(shellConfigPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Add directory to Windows user PATH using setx command
+ * This modifies the user's PATH permanently (requires terminal restart)
+ */
+function addToWindowsUserPath(dir: string): boolean {
+  try {
+    // Get current user PATH from registry
+    let existingPath = "";
+    try {
+      const result = execSync('reg query "HKCU\\Environment" /v Path 2>nul', {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const match = result.match(/Path\s+REG_(?:EXPAND_)?SZ\s+(.+)/);
+      existingPath = match ? match[1].trim() : "";
+    } catch {
+      // PATH not set yet, that's fine
+    }
+
+    // Check if already in PATH (case-insensitive)
+    const paths = existingPath.split(";").map((p) => p.toLowerCase().trim());
+    if (paths.includes(dir.toLowerCase())) {
+      return true; // Already in PATH
+    }
+
+    // Add to PATH
+    const newPath = existingPath ? `${existingPath};${dir}` : dir;
+    execSync(`setx PATH "${newPath}"`, { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Generate Windows .cmd launcher script
+ */
+function generateWindowsLauncher(targetPath: string): string {
+  return `@echo off\r\n"${targetPath}" %*\r\n`;
 }
 
 function addPathToShellConfig(shellConfigPath: string, verbose = false): boolean {
@@ -152,6 +215,11 @@ export async function createAlias(
   ensureDirectories();
 
   console.log(styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`));
+
+  // Windows: use .cmd launcher instead of symlink
+  if (IS_WINDOWS) {
+    return createWindowsAlias(patchedBinaryPath, aliasName, verbose);
+  }
 
   const writablePathDir = findWritablePathDir();
 
@@ -317,33 +385,187 @@ export async function createAlias(
   };
 }
 
+/**
+ * Create alias on Windows using .cmd launcher and setx for PATH
+ */
+/**
+ * Try to copy file, handling Windows file locking
+ * If target is locked, use a new filename with timestamp
+ */
+async function copyFileWithLockHandling(
+  src: string,
+  dest: string,
+  verbose = false,
+): Promise<string> {
+  try {
+    await copyFile(src, dest);
+    return dest;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    // EBUSY = file is locked/in use (Windows)
+    if (err.code === "EBUSY" && IS_WINDOWS) {
+      // Generate new filename with timestamp
+      const timestamp = Date.now();
+      const ext = dest.endsWith(".exe") ? ".exe" : "";
+      const baseName = dest.replace(/\.exe$/, "").replace(/-\d+$/, ""); // Remove old timestamp if any
+      const newDest = `${baseName}-${timestamp}${ext}`;
+
+      if (verbose) {
+        console.log(
+          styleText("yellow", `    [!] File locked, using new path: ${newDest}`),
+        );
+      }
+
+      await copyFile(src, newDest);
+      return newDest;
+    }
+    throw error;
+  }
+}
+
+async function createWindowsAlias(
+  patchedBinaryPath: string,
+  aliasName: string,
+  verbose = false,
+): Promise<CreateAliasResult> {
+  const binDir = join(DROID_PATCH_DIR, "bin");
+  if (!existsSync(binDir)) {
+    mkdirSync(binDir, { recursive: true });
+  }
+
+  // Copy binary to bins directory, handling file locking
+  const targetPath = join(BINS_DIR, `${aliasName}-patched.exe`);
+  const binaryDest = await copyFileWithLockHandling(patchedBinaryPath, targetPath, verbose);
+
+  if (verbose) {
+    console.log(styleText("gray", `    Stored binary: ${binaryDest}`));
+  }
+
+  // Create .cmd launcher in bin directory
+  const cmdPath = join(binDir, `${aliasName}.cmd`);
+  const cmdContent = generateWindowsLauncher(binaryDest);
+  writeFileSync(cmdPath, cmdContent);
+
+  if (verbose) {
+    console.log(styleText("gray", `    Created launcher: ${cmdPath}`));
+  }
+
+  // Try to add bin directory to user PATH
+  const pathAdded = addToWindowsUserPath(binDir);
+
+  console.log(styleText("green", `[*] Created: ${cmdPath}`));
+  console.log();
+
+  if (pathAdded) {
+    if (checkPathInclusion()) {
+      console.log(styleText("green", "─".repeat(60)));
+      console.log(styleText(["green", "bold"], "  ALIAS READY!"));
+      console.log(styleText("green", "─".repeat(60)));
+      console.log();
+      console.log(
+        styleText(
+          "white",
+          `The alias "${styleText(["cyan", "bold"], aliasName)}" is now available.`,
+        ),
+      );
+      console.log(styleText("gray", `(Installed to: ${binDir})`));
+
+      return {
+        aliasPath: cmdPath,
+        binaryPath: binaryDest,
+        immediate: true,
+      };
+    }
+
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log(styleText(["yellow", "bold"], "  PATH Updated - Restart Terminal"));
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log();
+    console.log(styleText("white", "PATH has been updated. Please restart your terminal."));
+    console.log(
+      styleText(
+        "white",
+        `Then you can use "${styleText(["cyan", "bold"], aliasName)}" command directly.`,
+      ),
+    );
+    console.log();
+    console.log(styleText("gray", `Installed to: ${binDir}`));
+  } else {
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log(styleText(["yellow", "bold"], "  Manual PATH Configuration Required"));
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log();
+    console.log(styleText("white", "Add this directory to your PATH:"));
+    console.log(styleText("cyan", `  ${binDir}`));
+    console.log();
+    console.log(styleText("gray", "Or run directly:"));
+    console.log(styleText("cyan", `  "${cmdPath}"`));
+  }
+
+  return {
+    aliasPath: cmdPath,
+    binaryPath: binaryDest,
+    immediate: false,
+  };
+}
+
 export async function removeAlias(aliasName: string): Promise<void> {
   console.log(styleText("white", `[*] Removing alias: ${styleText("cyan", aliasName)}`));
 
   let removed = false;
 
-  // Check common PATH directories for symlinks
-  for (const pathDir of COMMON_PATH_DIRS) {
-    const pathSymlink = join(pathDir, aliasName);
-    if (existsSync(pathSymlink)) {
-      try {
-        const stats = lstatSync(pathSymlink);
-        if (stats.isSymbolicLink()) {
-          const target = await readlink(pathSymlink);
-          // Support regular aliases, old websearch wrappers, and new proxy wrappers
-          if (
-            target.includes(".droid-patch/bins") ||
-            target.includes(".droid-patch/websearch") ||
-            target.includes(".droid-patch/proxy") ||
-            target.includes(".droid-patch/statusline")
-          ) {
-            await unlink(pathSymlink);
-            console.log(styleText("green", `    Removed: ${pathSymlink}`));
-            removed = true;
+  // Windows: check for .cmd launcher
+  if (IS_WINDOWS) {
+    const binDir = join(DROID_PATCH_DIR, "bin");
+    const cmdPath = join(binDir, `${aliasName}.cmd`);
+    if (existsSync(cmdPath)) {
+      await unlink(cmdPath);
+      console.log(styleText("green", `    Removed: ${cmdPath}`));
+      removed = true;
+    }
+
+    // Remove Windows binary (.exe)
+    const exePath = join(BINS_DIR, `${aliasName}-patched.exe`);
+    if (existsSync(exePath)) {
+      await unlink(exePath);
+      console.log(styleText("green", `    Removed binary: ${exePath}`));
+      removed = true;
+    }
+
+    // Also check for wrapper .cmd in proxy directory
+    const proxyDir = join(DROID_PATCH_DIR, "proxy");
+    const proxyWrapperCmd = join(proxyDir, `${aliasName}.cmd`);
+    if (existsSync(proxyWrapperCmd)) {
+      await unlink(proxyWrapperCmd);
+      console.log(styleText("green", `    Removed wrapper: ${proxyWrapperCmd}`));
+      removed = true;
+    }
+  }
+
+  // Check common PATH directories for symlinks (Unix)
+  if (!IS_WINDOWS) {
+    for (const pathDir of COMMON_PATH_DIRS) {
+      const pathSymlink = join(pathDir, aliasName);
+      if (existsSync(pathSymlink)) {
+        try {
+          const stats = lstatSync(pathSymlink);
+          if (stats.isSymbolicLink()) {
+            const target = await readlink(pathSymlink);
+            // Support regular aliases, old websearch wrappers, and new proxy wrappers
+            if (
+              target.includes(".droid-patch/bins") ||
+              target.includes(".droid-patch/websearch") ||
+              target.includes(".droid-patch/proxy") ||
+              target.includes(".droid-patch/statusline")
+            ) {
+              await unlink(pathSymlink);
+              console.log(styleText("green", `    Removed: ${pathSymlink}`));
+              removed = true;
+            }
           }
+        } catch {
+          // Ignore
         }
-      } catch {
-        // Ignore
       }
     }
   }
@@ -356,7 +578,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
     removed = true;
   }
 
-  // Remove binary if exists
+  // Remove binary if exists (Unix style without .exe)
   const binaryPath = join(BINS_DIR, `${aliasName}-patched`);
   if (existsSync(binaryPath)) {
     await unlink(binaryPath);
@@ -460,29 +682,117 @@ export async function listAliases(): Promise<void> {
 
   const aliases: AliasInfo[] = [];
 
-  for (const pathDir of COMMON_PATH_DIRS) {
-    if (!existsSync(pathDir)) continue;
+  // Windows: check for .cmd launchers in bin directory
+  if (IS_WINDOWS) {
+    const binDir = join(DROID_PATCH_DIR, "bin");
+    if (existsSync(binDir)) {
+      try {
+        const files = readdirSync(binDir);
+        for (const file of files) {
+          if (file.endsWith(".cmd")) {
+            const aliasName = file.replace(/\.cmd$/, "");
+            const fullPath = join(binDir, file);
+            // Read .cmd to find target
+            try {
+              const content = readFileSync(fullPath, "utf-8");
+              const match = content.match(/"([^"]+)"/);
+              const target = match ? match[1] : fullPath;
+              aliases.push({
+                name: aliasName,
+                target,
+                location: binDir,
+                immediate: checkPathInclusion(),
+              });
+            } catch {
+              aliases.push({
+                name: aliasName,
+                target: fullPath,
+                location: binDir,
+                immediate: false,
+              });
+            }
+          }
+        }
+      } catch {
+        // Directory can't be read
+      }
+    }
+
+    // Also check proxy directory for wrapper .cmd files
+    const proxyDir = join(DROID_PATCH_DIR, "proxy");
+    if (existsSync(proxyDir)) {
+      try {
+        const files = readdirSync(proxyDir);
+        for (const file of files) {
+          if (file.endsWith(".cmd")) {
+            const aliasName = file.replace(/\.cmd$/, "");
+            if (!aliases.find((a) => a.name === aliasName)) {
+              const fullPath = join(proxyDir, file);
+              aliases.push({
+                name: aliasName,
+                target: fullPath,
+                location: proxyDir,
+                immediate: false,
+              });
+            }
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  } else {
+    // Unix: check for symlinks
+    for (const pathDir of COMMON_PATH_DIRS) {
+      if (!existsSync(pathDir)) continue;
+
+      try {
+        const files = readdirSync(pathDir);
+        for (const file of files) {
+          const fullPath = join(pathDir, file);
+          try {
+            const stats = lstatSync(fullPath);
+            if (stats.isSymbolicLink()) {
+              const target = await readlink(fullPath);
+              // Support regular aliases, old websearch wrappers, and new proxy wrappers
+              if (
+                target.includes(".droid-patch/bins") ||
+                target.includes(".droid-patch/websearch") ||
+                target.includes(".droid-patch/proxy") ||
+                target.includes(".droid-patch/statusline")
+              ) {
+                aliases.push({
+                  name: file,
+                  target,
+                  location: pathDir,
+                  immediate: true,
+                });
+              }
+            }
+          } catch {
+            // Ignore
+          }
+        }
+      } catch {
+        // Directory can't be read
+      }
+    }
 
     try {
-      const files = readdirSync(pathDir);
+      const files = readdirSync(ALIASES_DIR);
+
       for (const file of files) {
-        const fullPath = join(pathDir, file);
+        const fullPath = join(ALIASES_DIR, file);
         try {
           const stats = lstatSync(fullPath);
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
-            // Support regular aliases, old websearch wrappers, and new proxy wrappers
-            if (
-              target.includes(".droid-patch/bins") ||
-              target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy") ||
-              target.includes(".droid-patch/statusline")
-            ) {
+            if (!aliases.find((a) => a.name === file)) {
               aliases.push({
                 name: file,
                 target,
-                location: pathDir,
-                immediate: true,
+                location: ALIASES_DIR,
+                immediate: false,
               });
             }
           }
@@ -491,34 +801,8 @@ export async function listAliases(): Promise<void> {
         }
       }
     } catch {
-      // Directory can't be read
+      // Directory doesn't exist or can't be read
     }
-  }
-
-  try {
-    const files = readdirSync(ALIASES_DIR);
-
-    for (const file of files) {
-      const fullPath = join(ALIASES_DIR, file);
-      try {
-        const stats = lstatSync(fullPath);
-        if (stats.isSymbolicLink()) {
-          const target = await readlink(fullPath);
-          if (!aliases.find((a) => a.name === file)) {
-            aliases.push({
-              name: file,
-              target,
-              location: ALIASES_DIR,
-              immediate: false,
-            });
-          }
-        }
-      } catch {
-        // Ignore
-      }
-    }
-  } catch {
-    // Directory doesn't exist or can't be read
   }
 
   if (aliases.length === 0) {
@@ -653,6 +937,11 @@ export async function createAliasForWrapper(
 
   console.log(styleText("white", `[*] Creating alias: ${styleText("cyan", aliasName)}`));
 
+  // Windows: create .cmd launcher pointing to wrapper
+  if (IS_WINDOWS) {
+    return createWindowsWrapperAlias(wrapperPath, aliasName, verbose);
+  }
+
   const writablePathDir = findWritablePathDir();
 
   if (writablePathDir) {
@@ -764,6 +1053,91 @@ export async function createAliasForWrapper(
   return {
     aliasPath: symlinkPath,
     binaryPath: wrapperPath,
+  };
+}
+
+/**
+ * Create Windows alias for wrapper script (.cmd pointing to wrapper .cmd)
+ */
+async function createWindowsWrapperAlias(
+  wrapperPath: string,
+  aliasName: string,
+  verbose = false,
+): Promise<CreateAliasResult> {
+  const binDir = join(DROID_PATCH_DIR, "bin");
+  if (!existsSync(binDir)) {
+    mkdirSync(binDir, { recursive: true });
+  }
+
+  if (verbose) {
+    console.log(styleText("gray", `    Wrapper: ${wrapperPath}`));
+  }
+
+  // Create .cmd launcher in bin directory that calls the wrapper
+  const cmdPath = join(binDir, `${aliasName}.cmd`);
+  const cmdContent = generateWindowsLauncher(wrapperPath);
+  writeFileSync(cmdPath, cmdContent);
+
+  if (verbose) {
+    console.log(styleText("gray", `    Created launcher: ${cmdPath}`));
+  }
+
+  // Try to add bin directory to user PATH
+  const pathAdded = addToWindowsUserPath(binDir);
+
+  console.log(styleText("green", `[*] Created: ${cmdPath}`));
+  console.log();
+
+  if (pathAdded) {
+    if (checkPathInclusion()) {
+      console.log(styleText("green", "─".repeat(60)));
+      console.log(styleText(["green", "bold"], "  ALIAS READY!"));
+      console.log(styleText("green", "─".repeat(60)));
+      console.log();
+      console.log(
+        styleText(
+          "white",
+          `The alias "${styleText(["cyan", "bold"], aliasName)}" is now available.`,
+        ),
+      );
+      console.log(styleText("gray", `(Installed to: ${binDir})`));
+
+      return {
+        aliasPath: cmdPath,
+        binaryPath: wrapperPath,
+        immediate: true,
+      };
+    }
+
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log(styleText(["yellow", "bold"], "  PATH Updated - Restart Terminal"));
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log();
+    console.log(styleText("white", "PATH has been updated. Please restart your terminal."));
+    console.log(
+      styleText(
+        "white",
+        `Then you can use "${styleText(["cyan", "bold"], aliasName)}" command directly.`,
+      ),
+    );
+    console.log();
+    console.log(styleText("gray", `Installed to: ${binDir}`));
+  } else {
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log(styleText(["yellow", "bold"], "  Manual PATH Configuration Required"));
+    console.log(styleText("yellow", "─".repeat(60)));
+    console.log();
+    console.log(styleText("white", "Add this directory to your PATH:"));
+    console.log(styleText("cyan", `  ${binDir}`));
+    console.log();
+    console.log(styleText("gray", "Or run directly:"));
+    console.log(styleText("cyan", `  "${cmdPath}"`));
+  }
+
+  return {
+    aliasPath: cmdPath,
+    binaryPath: wrapperPath,
+    immediate: false,
   };
 }
 

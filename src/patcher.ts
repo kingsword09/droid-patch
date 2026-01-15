@@ -2,6 +2,9 @@ import { readFile, writeFile, copyFile, chmod, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
+import { platform } from "node:os";
+
+const IS_WINDOWS = platform() === "win32";
 
 export interface Patch {
   name: string;
@@ -287,17 +290,34 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
   console.log(styleText("green", `[*] Applied ${totalPatched} patches`));
 
-  await writeFile(finalOutputPath, workingBuffer);
+  // Handle Windows file locking - if file is locked, use a new filename
+  let actualOutputPath = finalOutputPath;
+  try {
+    await writeFile(finalOutputPath, workingBuffer);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "EBUSY" && IS_WINDOWS) {
+      // File is locked, generate new filename with timestamp
+      const timestamp = Date.now();
+      const ext = finalOutputPath.endsWith(".exe") ? ".exe" : "";
+      const basePath = finalOutputPath.replace(/\.exe$/, "").replace(/\.patched$/, "").replace(/-\d+$/, "");
+      actualOutputPath = `${basePath}-${timestamp}${ext ? ext : ".patched"}`;
+      console.log(styleText("yellow", `[!] Original file locked, saving to: ${actualOutputPath}`));
+      await writeFile(actualOutputPath, workingBuffer);
+    } else {
+      throw error;
+    }
+  }
   console.log(
-    styleText("white", `[*] Patched binary saved: ${styleText("cyan", finalOutputPath)}`),
+    styleText("white", `[*] Patched binary saved: ${styleText("cyan", actualOutputPath)}`),
   );
 
-  await chmod(finalOutputPath, 0o755);
+  await chmod(actualOutputPath, 0o755);
   console.log(styleText("gray", "[*] Set executable permission"));
 
   console.log();
   console.log(styleText("white", "[*] Verifying patches..."));
-  const verifyBuffer = await readFile(finalOutputPath);
+  const verifyBuffer = await readFile(actualOutputPath);
 
   let allVerified = true;
   for (const patch of patches) {
@@ -373,7 +393,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
   return {
     success: allVerified,
-    outputPath: finalOutputPath,
+    outputPath: actualOutputPath,
     results,
     patchedCount: totalPatched,
   };
