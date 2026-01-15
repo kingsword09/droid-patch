@@ -23,6 +23,13 @@ import {
   listAllMetadata,
   formatPatches,
 } from "./metadata.ts";
+import {
+  addModel,
+  addModelInteractive,
+  removeModel,
+  printModelsList,
+  type Provider,
+} from "./model-manager.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_WINDOWS = platform() === "win32";
@@ -1132,6 +1139,134 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("gray", `  Success: ${successCount}, Failed: ${failCount}`));
     }
     console.log(styleText("cyan", "═".repeat(60)));
+  })
+  .command("add-model", "Add a custom model to settings.json (interactive if no options)")
+  .option("-m, --model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
+  .option("-n, --name <name>", "Display name (e.g., 'Opus [proxy]')")
+  .option("-u, --url <url>", "Base URL (e.g., http://127.0.0.1:20002/droid)")
+  .option("-k, --key <key>", "API key")
+  .option("-p, --provider <provider>", "Provider: anthropic, openai, or generic-chat-completion-api")
+  .option("-i, --index <index>", "Insert at index (auto-assigned if not specified)")
+  .action(async (options) => {
+    const model = options.model as string | undefined;
+    const displayName = options.name as string | undefined;
+    const baseUrl = options.url as string | undefined;
+    const apiKey = options.key as string | undefined;
+    const providerStr = options.provider as string | undefined;
+    const indexStr = options.index as string | undefined;
+
+    // If no options provided, enter interactive mode
+    if (!model && !displayName && !baseUrl && !apiKey && !providerStr) {
+      const index = indexStr ? parseInt(indexStr, 10) : undefined;
+      await addModelInteractive(index);
+      return;
+    }
+
+    // If some but not all options provided, show error with usage
+    if (!model || !displayName || !baseUrl || !apiKey || !providerStr) {
+      console.log(styleText("yellow", "Missing required options. Enter interactive mode or provide all options."));
+      console.log();
+      console.log(styleText("white", "Interactive mode:"));
+      console.log(styleText("cyan", "  npx droid-patch add-model"));
+      console.log();
+      console.log(styleText("white", "Full command mode:"));
+      console.log(styleText("cyan", "  npx droid-patch add-model \\"));
+      console.log(styleText("cyan", '    -m "claude-sonnet-4-20250514" \\'));
+      console.log(styleText("cyan", '    -n "Opus [proxy]" \\'));
+      console.log(styleText("cyan", '    -u "http://127.0.0.1:20002/droid" \\'));
+      console.log(styleText("cyan", '    -k "your-api-key" \\'));
+      console.log(styleText("cyan", '    -p "anthropic"'));
+      console.log();
+      console.log(styleText("gray", "Providers: anthropic, openai, generic-chat-completion-api"));
+      console.log(styleText("gray", "Optional: -i <index> to insert at specific position"));
+      process.exit(1);
+    }
+
+    const validProviders: Provider[] = ["anthropic", "openai", "generic-chat-completion-api"];
+    if (!validProviders.includes(providerStr as Provider)) {
+      console.log(styleText("red", `Error: Invalid provider "${providerStr}"`));
+      console.log(styleText("gray", `Valid providers: ${validProviders.join(", ")}`));
+      process.exit(1);
+    }
+
+    const index = indexStr ? parseInt(indexStr, 10) : undefined;
+    if (indexStr && (isNaN(index!) || index! < 0)) {
+      console.log(styleText("red", "Error: Index must be a non-negative number"));
+      process.exit(1);
+    }
+
+    const result = addModel(
+      model,
+      displayName,
+      baseUrl,
+      apiKey,
+      providerStr as Provider,
+      index,
+    );
+
+    if (result.success) {
+      console.log(styleText("green", `[+] ${result.message}`));
+      console.log();
+      console.log(styleText("white", "Model details:"));
+      console.log(styleText("gray", `  ID: ${result.model.id}`));
+      console.log(styleText("gray", `  Display Name: ${result.model.displayName}`));
+      console.log(styleText("gray", `  Model: ${result.model.model}`));
+      console.log(styleText("gray", `  Provider: ${result.model.provider}`));
+      console.log(styleText("gray", `  Base URL: ${result.model.baseUrl}`));
+    } else {
+      console.log(styleText("red", `Error: ${result.message}`));
+      process.exit(1);
+    }
+  })
+  .command("remove-model", "Remove a custom model from settings.json")
+  .argument("<identifier>", "Model index, ID, or display name to remove")
+  .action((options, args) => {
+    const identifier = args?.[0] as string;
+
+    if (!identifier) {
+      console.log(styleText("red", "Error: Model identifier required"));
+      console.log();
+      console.log(styleText("white", "Usage:"));
+      console.log(styleText("cyan", "  npx droid-patch remove-model <identifier>"));
+      console.log();
+      console.log(styleText("gray", "Identifier can be:"));
+      console.log(styleText("gray", "  - Index number (e.g., 0, 1, 2)"));
+      console.log(styleText("gray", "  - Model ID (e.g., custom:Opus-[proxy]-0)"));
+      console.log(styleText("gray", "  - Display name (e.g., 'Opus [proxy]')"));
+      console.log();
+      console.log(styleText("gray", "Use 'npx droid-patch list-models' to see all models"));
+      process.exit(1);
+    }
+
+    const result = removeModel(identifier);
+
+    if (result.success && result.removed) {
+      console.log(styleText("green", `[+] ${result.message}`));
+      console.log();
+      console.log(styleText("white", "Removed model details:"));
+      console.log(styleText("gray", `  ID: ${result.removed.id}`));
+      console.log(styleText("gray", `  Display Name: ${result.removed.displayName}`));
+      console.log(styleText("gray", `  Model: ${result.removed.model}`));
+      console.log(styleText("gray", `  Provider: ${result.removed.provider}`));
+
+      if (result.updatedModels && result.updatedModels.length > 0) {
+        console.log();
+        console.log(styleText("yellow", "Updated model IDs (due to index shift):"));
+        for (const updated of result.updatedModels) {
+          console.log(styleText("gray", `  ${updated.displayName}:`));
+          console.log(styleText("gray", `    ${updated.oldId} → ${updated.newId}`));
+        }
+      }
+      console.log();
+      console.log(styleText("gray", "Use 'npx droid-patch list-models' to see current state."));
+    } else {
+      console.log(styleText("red", `Error: ${result.message}`));
+      process.exit(1);
+    }
+  })
+  .command("list-models", "List all custom models in settings.json")
+  .action(() => {
+    printModelsList();
   })
   .run()
   .catch((err: Error) => {

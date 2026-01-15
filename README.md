@@ -285,18 +285,23 @@ Configure your custom model in `~/.factory/settings.json`:
   "customModels": [
     {
       "model": "claude-sonnet-4-20250514",
-      "id": "custom:Claude-Proxy-0",
+      "id": "custom:Opus-[proxy]-0",
       "baseUrl": "http://127.0.0.1:20002/droid",
       "apiKey": "your-api-key",
-      "displayName": "Claude [proxy]",
+      "displayName": "Opus [proxy]",
       "provider": "anthropic"
     }
   ],
   "sessionDefaultSettings": {
-    "model": "custom:Claude-Proxy-0"
+    "model": "custom:Opus-[proxy]-0"
   }
 }
 ```
+
+**Important**: The `id` field must match the `displayName` pattern:
+- Format: `custom:{DisplayName}-{index}` where spaces are replaced with `-`
+- Example: `displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
+- The trailing number (`-0`) is the index (starting from 0)
 
 ### `--reasoning-effort`
 
