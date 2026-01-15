@@ -74,6 +74,39 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--no-backup`         | 跳过创建原始二进制文件的备份                                                                    |
 | `-v, --verbose`       | 启用详细输出                                                                                    |
 
+### 管理自定义模型
+
+```bash
+# 列出所有自定义模型
+npx droid-patch list-models
+
+# 交互式添加模型
+npx droid-patch add-model
+
+# 命令行添加模型
+npx droid-patch add-model \
+  -m "claude-sonnet-4-20250514" \
+  -n "Sonnet [proxy]" \
+  -u "http://127.0.0.1:20002/droid" \
+  -k "your-api-key" \
+  -p "anthropic"
+
+# 在指定位置插入模型
+npx droid-patch add-model -i 0  # 交互式，插入到位置 0
+
+# 删除模型（支持 index、ID 或 displayName）
+npx droid-patch remove-model 0                    # 按索引
+npx droid-patch remove-model "custom:Sonnet-[proxy]-1"  # 按 ID
+npx droid-patch remove-model "Sonnet [proxy]"    # 按显示名称
+```
+
+**模型 ID 格式**：`custom:{DisplayName}-{index}`
+- `DisplayName` 中的空格会被替换为 `-`
+- `index` 是模型在数组中的位置（从 0 开始）
+- 示例：`displayName: "Opus [proxy]"` → `id: "custom:Opus-[proxy]-0"`
+
+**重要**：删除或插入模型时，后续模型的 ID 会自动更新（因为 index 会变化）。
+
 ### 管理别名和文件
 
 ```bash
