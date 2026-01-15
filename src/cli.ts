@@ -2,7 +2,7 @@ import bin from "tiny-bin";
 import { styleText } from "node:util";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { patchDroid, type Patch } from "./patcher.ts";
@@ -25,6 +25,7 @@ import {
 } from "./metadata.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const IS_WINDOWS = platform() === "win32";
 
 function getVersion(): string {
   try {
@@ -56,7 +57,43 @@ function getDroidVersion(droidPath: string): string | undefined {
 function findDefaultDroidPath(): string {
   const home = homedir();
 
-  // Try `which droid` first to find droid in PATH
+  // Windows: use `where` command instead of `which`
+  if (IS_WINDOWS) {
+    try {
+      const result = execSync("where droid", {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      // `where` may return multiple lines, take the first one
+      const firstResult = result.split(/\r?\n/)[0];
+      if (firstResult && existsSync(firstResult)) {
+        return firstResult;
+      }
+    } catch {
+      // where command failed, continue with fallback paths
+    }
+
+    // Windows common installation paths
+    const windowsPaths = [
+      // Default install location
+      join(home, ".droid", "bin", "droid.exe"),
+      // AppData local
+      join(home, "AppData", "Local", "Programs", "droid", "droid.exe"),
+      // Scoop
+      join(home, "scoop", "apps", "droid", "current", "droid.exe"),
+      // Current directory
+      "./droid.exe",
+    ];
+
+    for (const p of windowsPaths) {
+      if (existsSync(p)) return p;
+    }
+
+    // Return default path even if not found (will error later with helpful message)
+    return join(home, ".droid", "bin", "droid.exe");
+  }
+
+  // Unix: Try `which droid` first to find droid in PATH
   try {
     const result = execSync("which droid", {
       encoding: "utf-8",
@@ -69,7 +106,7 @@ function findDefaultDroidPath(): string {
     // which command failed, continue with fallback paths
   }
 
-  // Common installation paths
+  // Common installation paths (Unix)
   const paths = [
     // Default sh install location
     join(home, ".droid", "bin", "droid"),
@@ -458,6 +495,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       // Pattern varies by version:
       //   v0.39.0+: T!=="none"&&T!=="off"&&!X.supportedReasoningEfforts.includes(T)
       //   v0.43.0+: T!=="none"&&T!=="off"&&!R.reasoningEffort.supported.includes(T)
+      //   v0.49.0+: !this.validateReasoningEffort(D,H.reasoningEffort)
       // Using regex to match any single-letter variable (A-Z) and preserve property path
       // Logic: && 0 && makes entire condition always false, bypassing validation
       patches.push({
