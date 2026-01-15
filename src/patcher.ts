@@ -300,7 +300,10 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
       // File is locked, generate new filename with timestamp
       const timestamp = Date.now();
       const ext = finalOutputPath.endsWith(".exe") ? ".exe" : "";
-      const basePath = finalOutputPath.replace(/\.exe$/, "").replace(/\.patched$/, "").replace(/-\d+$/, "");
+      const basePath = finalOutputPath
+        .replace(/\.exe$/, "")
+        .replace(/\.patched$/, "")
+        .replace(/-\d+$/, "");
       actualOutputPath = `${basePath}-${timestamp}${ext ? ext : ".patched"}`;
       console.log(styleText("yellow", `[!] Original file locked, saving to: ${actualOutputPath}`));
       await writeFile(actualOutputPath, workingBuffer);

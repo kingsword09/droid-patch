@@ -411,9 +411,7 @@ async function copyFileWithLockHandling(
       const newDest = `${baseName}-${timestamp}${ext}`;
 
       if (verbose) {
-        console.log(
-          styleText("yellow", `    [!] File locked, using new path: ${newDest}`),
-        );
+        console.log(styleText("yellow", `    [!] File locked, using new path: ${newDest}`));
       }
 
       await copyFile(src, newDest);
