@@ -166,11 +166,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     "--disable-telemetry",
     "Disable telemetry and Sentry error reporting (block data uploads)",
   )
-
-  .option(
-    "--spec-model-custom",
-    "Enable custom models as spec model (show in UI selector + bypass validation)",
-  )
   .option("--dry-run", "Verify patches without actually modifying the binary")
   .option("-p, --path <path>", "Path to the droid binary")
   .option("-o, --output <dir>", "Output directory for patched binary")
@@ -190,8 +185,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
     const reasoningEffort = options["reasoning-effort"] as boolean;
     const noTelemetry = options["disable-telemetry"] as boolean;
-
-    const specModelCustom = options["spec-model-custom"] as boolean;
     const dryRun = options["dry-run"] as boolean;
     const path = (options.path as string) || findDefaultDroidPath();
     const outputDir = options.output as string | undefined;
@@ -206,7 +199,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       !!skipLogin ||
       !!reasoningEffort ||
       !!noTelemetry ||
-      !!specModelCustom ||
       (!!apiBase && !websearch && !websearchProxy);
 
     // Check for conflicting flags
@@ -336,15 +328,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       return;
     }
 
-    if (
-      !isCustom &&
-      !skipLogin &&
-      !apiBase &&
-      !websearch &&
-      !reasoningEffort &&
-      !noTelemetry &&
-      !specModelCustom
-    ) {
+    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort && !noTelemetry) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
       console.log(
@@ -363,7 +347,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(
         styleText("gray", "  --disable-telemetry Disable telemetry and Sentry error reporting"),
       );
-      console.log(styleText("gray", "  --spec-model-custom Enable custom models as spec model"));
       console.log(
         styleText("gray", "  --standalone        Standalone mode: mock non-LLM Factory APIs"),
       );
@@ -552,41 +535,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       });
     }
 
-    // Add spec-model-custom patches: enable custom models as spec model
-    // Patch 1: Show custom models in spec model selector UI
-    //   Original: Y=Q?X.filter((P)=>Q.includes(P.id)):X  (37 chars)
-    //   Changed:  Y=0?X.filter((P)=>Q.includes(P.id)):X  (37 chars)
-    //   Effect: 0 is always false, so Y=X (show all custom models)
-    // Patch 2: Bypass compatibilityGroup validation for custom spec models
-    //   Original: W=WRA(A),K=WRA(R);if(W&&W!==K){  (31 chars)
-    //   Changed:  W=WRA(A),K=WRA(R);if(K&&W!==K){  (31 chars)
-    //   Effect: Skip check when K (spec model's compatibilityGroup) is undefined
-    if (specModelCustom) {
-      patches.push({
-        name: "specModelCustomUIShow",
-        description: "Show all custom models in spec model selector (bypass filter)",
-        pattern: Buffer.from(""), // Not used when regexPattern is set
-        replacement: Buffer.from(""),
-        // v0.47.0 changed minified variable names (e.g., X/P -> Z/E), so use regex.
-        // Pattern: Y=Q?Z.filter((E)=>Q.includes(E.id)):Z -> Y=0?... (disable filter)
-        regexPattern:
-          /([A-Za-z_$])=([A-Za-z_$])\?([A-Za-z_$])\.filter\(\(([A-Za-z_$])\)=>\2\.includes\(\4\.id\)\):\3/g,
-        regexReplacement: "$1=0?$3.filter(($4)=>$2.includes($4.id)):$3",
-      });
-
-      // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
-      // Pattern: W=funcName(A),K=funcName(R);if(W&&W!==K){ -> if(K&&W!==K){ to skip when K is undefined
-      patches.push({
-        name: "specModelCustomValidation",
-        description: "Bypass compatibilityGroup check for custom spec models",
-        pattern: Buffer.from(""),
-        replacement: Buffer.from(""),
-        regexPattern:
-          /([A-Z])=([a-zA-Z_$][a-zA-Z0-9_$]*)\(A\),([A-Z])=\2\(R\);if\(\1&&\1!==\3\)\{/g,
-        regexReplacement: "$1=$2(A),$3=$2(R);if($3&&$1!==$3){",
-      });
-    }
-
     try {
       const result = await patchDroid({
         inputPath: path,
@@ -671,7 +619,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             reasoningEffort: !!reasoningEffort,
             noTelemetry: !!noTelemetry,
             standalone: !!standalone,
-            specModelCustom: !!specModelCustom,
           },
           {
             droidPatchVersion: version,
@@ -706,7 +653,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("--droid-version <version>", "Remove aliases for this droid version")
   .option(
     "--flag <flag>",
-    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone, spec-model-custom)",
+    "Remove aliases with this flag (is-custom, skip-login, websearch, api-base, reasoning-effort, disable-telemetry, standalone)",
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
@@ -723,7 +670,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         "reasoning-effort",
         "disable-telemetry",
         "standalone",
-        "spec-model-custom",
       ];
       if (!allowedFlags.includes(flagRaw as FilterFlag)) {
         console.error(styleText("red", `Error: Invalid --flag value: ${flagRaw}`));
@@ -935,30 +881,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             description: "Make flushToWeb always return (!0|| = always true)",
             pattern: Buffer.from("this.webEvents.length===0"),
             replacement: Buffer.from("!0||this.webEvents.length"),
-          });
-        }
-
-        if (meta.patches.specModelCustom) {
-          patches.push({
-            name: "specModelCustomUIShow",
-            description: "Show all custom models in spec model selector (bypass filter)",
-            pattern: Buffer.from(""), // Not used when regexPattern is set
-            replacement: Buffer.from(""),
-            // v0.47.0 changed minified variable names (e.g., X/P -> Z/E), so use regex.
-            // Pattern: Y=Q?Z.filter((E)=>Q.includes(E.id)):Z -> Y=0?... (disable filter)
-            regexPattern:
-              /([A-Za-z_$])=([A-Za-z_$])\?([A-Za-z_$])\.filter\(\(([A-Za-z_$])\)=>\2\.includes\(\4\.id\)\):\3/g,
-            regexReplacement: "$1=0?$3.filter(($4)=>$2.includes($4.id)):$3",
-          });
-          // Use regex to match any function name (e.g., WRA, le, DRA) since it changes with each build
-          patches.push({
-            name: "specModelCustomValidation",
-            description: "Bypass compatibilityGroup check for custom spec models",
-            pattern: Buffer.from(""),
-            replacement: Buffer.from(""),
-            regexPattern:
-              /([A-Z])=([a-zA-Z_$][a-zA-Z0-9_$]*)\(A\),([A-Z])=\2\(R\);if\(\1&&\1!==\3\)\{/g,
-            regexReplacement: "$1=$2(A),$3=$2(R);if($3&&$1!==$3){",
           });
         }
 
