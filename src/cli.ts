@@ -328,14 +328,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       return;
     }
 
-    if (
-      !isCustom &&
-      !skipLogin &&
-      !apiBase &&
-      !websearch &&
-      !reasoningEffort &&
-      !noTelemetry
-    ) {
+    if (!isCustom && !skipLogin && !apiBase && !websearch && !reasoningEffort && !noTelemetry) {
       console.log(styleText("yellow", "No patch flags specified. Available patches:"));
       console.log(styleText("gray", "  --is-custom         Patch isCustom for custom models"));
       console.log(
