@@ -67,7 +67,6 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
-| `--spec-model-custom` | Enable custom models as spec model (show in UI selector + bypass validation)                                 |
 | `--dry-run`           | Verify patches without actually modifying the binary                                                         |
 | `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |
 | `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                             |
@@ -433,29 +432,6 @@ npx droid-patch --disable-telemetry droid-private
 
 # Combine with other patches
 npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
-```
-
-### `--spec-model-custom`
-
-Enables custom models to be used as the spec model in spec mode.
-
-**Purpose**: By default, droid only allows official models (like Claude, GPT) as spec models. This patch allows custom models to appear in the spec model selector and bypasses the compatibility validation.
-
-**How it works**:
-
-- Shows all custom models in the spec model selector UI (bypasses the filter that hides them)
-- Bypasses the `compatibilityGroup` validation check (uses regex matching to handle minified function name changes across versions)
-
-**Compatibility**: Requires droid 0.45.0 or later (the compatibilityGroup feature was added in this version).
-
-**Usage**:
-
-```bash
-# Enable custom models as spec model
-npx droid-patch --spec-model-custom droid-spec
-
-# Combine with other patches for full custom model support
-npx droid-patch --is-custom --reasoning-effort --spec-model-custom droid-custom-full
 ```
 
 ---
