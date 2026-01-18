@@ -320,7 +320,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log(styleText("gray", "  2. Google PSE:"));
         console.log(styleText("gray", "     export GOOGLE_PSE_API_KEY=your_api_key"));
         console.log(styleText("gray", "     export GOOGLE_PSE_CX=your_search_engine_id"));
-        console.log(styleText("gray", "  3-6. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
+        console.log(styleText("gray", "  3. Tavily:"));
+        console.log(styleText("gray", "     export TAVILY_API_KEY=your_api_key"));
+        console.log(styleText("gray", "  4-7. Serper, Brave, SearXNG, DuckDuckGo (fallbacks)"));
         console.log();
         console.log("Debug mode:");
         console.log(styleText("gray", "  export DROID_SEARCH_DEBUG=1"));

@@ -62,7 +62,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--is-custom`         | 将 `isCustom:!0` 修改为 `isCustom:!1`（为自定义模型启用上下文压缩）                             |
 | `--skip-login`        | 通过注入假的 `FACTORY_API_KEY` 跳过登录验证                                                     |
 | `--api-base <url>`    | 替换 API URL（单独使用：二进制补丁，最多 22 字符；与 `--websearch` 配合：代理转发目标，无限制） |
-| `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Serper、Brave、SearXNG、DuckDuckGo                     |
+| `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Tavily、Serper、Brave、SearXNG、DuckDuckGo             |
 | `--websearch-proxy`   | 原生搜索模式：使用模型内置的 web_search 能力（需要 proxy 插件）                                 |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
 | `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
@@ -247,7 +247,7 @@ npx droid-patch --websearch --api-base "http://my-proxy.example.com:3000" droid-
 
 **特性**：
 
-- **多搜索提供商**：自动降级（Smithery > Google PSE > Serper > Brave > SearXNG > DuckDuckGo）
+- **多搜索提供商**：自动降级（Smithery > Google PSE > Tavily > Serper > Brave > SearXNG > DuckDuckGo）
 - **每实例独立代理**：每个 droid 实例运行自己的代理，自动分配端口
 - **自动清理**：droid 退出时代理自动停止
 - **转发目标**：使用 `--api-base` 配合 `--websearch` 可将非搜索请求转发到自定义后端
@@ -442,10 +442,11 @@ npx droid-patch --is-custom --skip-login --disable-telemetry droid-private
 | ------ | ------------ | ---- | --------------------- | -------- |
 | 1      | Smithery Exa | 优秀 | 免费（通过 Smithery） | 简单     |
 | 2      | Google PSE   | 很好 | 10,000 次/天          | 中等     |
-| 3      | Serper       | 很好 | 2,500 免费额度        | 简单     |
-| 4      | Brave Search | 好   | 2,000 次/月           | 简单     |
-| 5      | SearXNG      | 好   | 无限（自托管）        | 较难     |
-| 6      | DuckDuckGo   | 基本 | 无限                  | 无需配置 |
+| 3      | Tavily       | 很好 | 免费额度（不固定）    | 简单     |
+| 4      | Serper       | 很好 | 2,500 免费额度        | 简单     |
+| 5      | Brave Search | 好   | 2,000 次/月           | 简单     |
+| 6      | SearXNG      | 好   | 无限（自托管）        | 较难     |
+| 7      | DuckDuckGo   | 基本 | 无限                  | 无需配置 |
 
 ---
 
@@ -527,7 +528,28 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # 你的搜索引擎 I
 
 ---
 
-## 3. Serper
+## 3. Tavily
+
+[Tavily](https://tavily.com/) 提供简单易用的 Web 搜索 API。
+
+### 设置步骤
+
+1. **创建账号**
+   - 访问 [tavily.com](https://tavily.com/)
+   - 注册账号
+
+2. **获取 API Key**
+   - 在控制台/API 设置中找到并复制 API key
+
+3. **配置环境变量**
+   ```bash
+   # 添加到 ~/.zshrc 或 ~/.bashrc
+   export TAVILY_API_KEY="your_api_key_here"
+   ```
+
+---
+
+## 4. Serper
 
 [Serper](https://serper.dev) 通过易用的 API 提供 Google 搜索结果。
 
@@ -555,7 +577,7 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # 你的搜索引擎 I
 
 ---
 
-## 4. Brave Search
+## 5. Brave Search
 
 [Brave Search API](https://brave.com/search/api/) 提供注重隐私的搜索结果。
 
@@ -587,7 +609,7 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # 你的搜索引擎 I
 
 ---
 
-## 5. SearXNG（自托管）
+## 6. SearXNG（自托管）
 
 [SearXNG](https://github.com/searxng/searxng) 是一个免费、注重隐私的元搜索引擎，可以自托管。
 
@@ -636,7 +658,7 @@ export SEARXNG_URL="https://searx.be"
 
 ---
 
-## 6. DuckDuckGo（默认备用）
+## 7. DuckDuckGo（默认备用）
 
 当没有配置其他提供商或其他提供商不可用时，自动使用 DuckDuckGo 作为最终备用。
 
@@ -684,10 +706,13 @@ export GOOGLE_PSE_CX="your_search_engine_id"
 export GOOGLE_PSE_API_KEY="your_google_key"
 export GOOGLE_PSE_CX="your_search_engine_id"
 
-# 选项 2：Serper（2,500 免费额度）
+# 选项 2：Tavily（免费额度不固定）
+export TAVILY_API_KEY="your_tavily_key"
+
+# 选项 3：Serper（2,500 免费额度）
 export SERPER_API_KEY="your_serper_key"
 
-# 选项 3：Brave（每月 2,000 次免费）
+# 选项 4：Brave（每月 2,000 次免费）
 export BRAVE_API_KEY="your_brave_key"
 
 # DuckDuckGo 始终作为最终备用可用

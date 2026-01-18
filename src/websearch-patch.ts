@@ -2,7 +2,7 @@
  * WebSearch Patch Generator
  *
  * Two modes:
- * - --websearch: External providers (Smithery, Google PSE, Serper, Brave, SearXNG, DuckDuckGo)
+ * - --websearch: External providers (Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo)
  * - --websearch-proxy: Native provider via proxy plugin (reads ~/.factory/settings.json)
  */
 

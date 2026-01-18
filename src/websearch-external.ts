@@ -1,13 +1,13 @@
 /**
  * WebSearch External Providers Mode (--websearch)
  *
- * Priority: Smithery Exa > Google PSE > Serper > Brave > SearXNG > DuckDuckGo
+ * Priority: Smithery Exa > Google PSE > Tavily > Serper > Brave > SearXNG > DuckDuckGo
  */
 
 export function generateSearchProxyServerCode(): string {
   return `#!/usr/bin/env node
 // Droid WebSearch Proxy Server (External Providers Mode)
-// Priority: Smithery Exa > Google PSE > Serper > Brave > SearXNG > DuckDuckGo
+// Priority: Smithery Exa > Google PSE > Tavily > Serper > Brave > SearXNG > DuckDuckGo
 
 const http = require('http');
 const https = require('https');
@@ -60,6 +60,30 @@ async function searchGooglePSE(query, numResults) {
     if (data.error) return null;
     return (data.items || []).map(function(item) { return { title: item.title, url: item.link, content: item.snippet || '' }; });
   } catch (e) { log('Google PSE failed:', e.message); }
+  return null;
+}
+
+async function searchTavily(query, numResults) {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const bodyStr = JSON.stringify({
+      api_key: apiKey,
+      query: query,
+      max_results: numResults,
+      search_depth: 'basic',
+      include_answer: false,
+      include_images: false,
+      include_raw_content: false
+    }).replace(/'/g, "'\\\\''");
+    const curlCmd = 'curl -s "https://api.tavily.com/search" -H "Content-Type: application/json" -d \\'' + bodyStr + "\\'";
+    const data = JSON.parse(execSync(curlCmd, { encoding: 'utf-8', timeout: 15000 }));
+    if (data && Array.isArray(data.results) && data.results.length > 0) {
+      return data.results.slice(0, numResults).map(function(item) {
+        return { title: item.title || '', url: item.url || '', content: item.content || item.snippet || item.raw_content || '' };
+      });
+    }
+  } catch (e) { log('Tavily failed:', e.message); }
   return null;
 }
 
@@ -132,12 +156,15 @@ async function search(query, numResults) {
   numResults = numResults || 10;
   log('Search:', query);
   
-  // Priority: Smithery > Google PSE > Serper > Brave > SearXNG > DuckDuckGo
+  // Priority: Smithery > Google PSE > Tavily > Serper > Brave > SearXNG > DuckDuckGo
   var results = await searchSmitheryExa(query, numResults);
   if (results && results.length > 0) return { results: results, source: 'smithery-exa' };
   
   results = await searchGooglePSE(query, numResults);
   if (results && results.length > 0) return { results: results, source: 'google-pse' };
+  
+  results = await searchTavily(query, numResults);
+  if (results && results.length > 0) return { results: results, source: 'tavily' };
   
   results = await searchSerper(query, numResults);
   if (results && results.length > 0) return { results: results, source: 'serper' };

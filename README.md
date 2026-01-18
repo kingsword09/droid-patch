@@ -62,7 +62,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                         |
 | `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
 | `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
-| `--websearch`         | External providers mode: Smithery, Google PSE, Serper, Brave, SearXNG, DuckDuckGo                            |
+| `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                    |
 | `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
@@ -247,7 +247,7 @@ Enables WebSearch via **external search providers** through a local proxy server
 
 **Features**:
 
-- **Multiple search providers** with automatic fallback (Smithery > Google PSE > Serper > Brave > SearXNG > DuckDuckGo)
+- **Multiple search providers** with automatic fallback (Smithery > Google PSE > Tavily > Serper > Brave > SearXNG > DuckDuckGo)
 - **Per-instance proxy**: Each droid instance runs its own proxy on an auto-assigned port
 - **Auto-cleanup**: Proxy automatically stops when droid exits
 - **Forward target**: Use `--api-base` with `--websearch` to forward non-search requests to a custom backend
@@ -448,10 +448,11 @@ The proxy tries providers in this order and uses the first one that succeeds:
 | -------- | ------------ | --------- | --------------------- | ---------------- |
 | 1        | Smithery Exa | Excellent | Free (via Smithery)   | Easy             |
 | 2        | Google PSE   | Very Good | 10,000/day            | Medium           |
-| 3        | Serper       | Very Good | 2,500 free credits    | Easy             |
-| 4        | Brave Search | Good      | 2,000/month           | Easy             |
-| 5        | SearXNG      | Good      | Unlimited (self-host) | Hard             |
-| 6        | DuckDuckGo   | Basic     | Unlimited             | None             |
+| 3        | Tavily       | Very Good | Free credits (varies) | Easy             |
+| 4        | Serper       | Very Good | 2,500 free credits    | Easy             |
+| 5        | Brave Search | Good      | 2,000/month           | Easy             |
+| 6        | SearXNG      | Good      | Unlimited (self-host) | Hard             |
+| 7        | DuckDuckGo   | Basic     | Unlimited             | None             |
 
 ---
 
@@ -533,7 +534,29 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # Your Search engine I
 
 ---
 
-## 3. Serper
+## 3. Tavily
+
+[Tavily](https://tavily.com/) provides an easy-to-use web search API.
+
+### Setup Steps
+
+1. **Create an Account**
+   - Go to [tavily.com](https://tavily.com/)
+   - Sign up for an account
+
+2. **Get Your API Key**
+   - Navigate to your dashboard / API settings
+   - Copy your API key
+
+3. **Configure Environment Variable**
+   ```bash
+   # Add to ~/.zshrc or ~/.bashrc
+   export TAVILY_API_KEY="your_api_key_here"
+   ```
+
+---
+
+## 4. Serper
 
 [Serper](https://serper.dev) provides Google search results through an easy-to-use API.
 
@@ -561,7 +584,7 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # Your Search engine I
 
 ---
 
-## 4. Brave Search
+## 5. Brave Search
 
 [Brave Search API](https://brave.com/search/api/) provides privacy-focused search results.
 
@@ -593,7 +616,7 @@ export GOOGLE_PSE_CX="017576662512468239146:omuauf_lfve"  # Your Search engine I
 
 ---
 
-## 5. SearXNG (Self-Hosted)
+## 6. SearXNG (Self-Hosted)
 
 [SearXNG](https://github.com/searxng/searxng) is a free, privacy-respecting metasearch engine you can self-host.
 
@@ -642,7 +665,7 @@ Find public instances at [searx.space](https://searx.space/)
 
 ---
 
-## 6. DuckDuckGo (Default Fallback)
+## 7. DuckDuckGo (Default Fallback)
 
 DuckDuckGo is used automatically as the final fallback when no other providers are configured or available.
 
@@ -690,10 +713,13 @@ export GOOGLE_PSE_CX="your_search_engine_id"
 export GOOGLE_PSE_API_KEY="your_google_key"
 export GOOGLE_PSE_CX="your_search_engine_id"
 
-# Option 2: Serper (2,500 free credits)
+# Option 2: Tavily (free credits vary)
+export TAVILY_API_KEY="your_tavily_key"
+
+# Option 3: Serper (2,500 free credits)
 export SERPER_API_KEY="your_serper_key"
 
-# Option 3: Brave (2,000/month free)
+# Option 4: Brave (2,000/month free)
 export BRAVE_API_KEY="your_brave_key"
 
 # DuckDuckGo is always available as final fallback
