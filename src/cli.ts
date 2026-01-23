@@ -495,10 +495,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         description: "Bypass reasoning effort validation (allows xhigh in settings.json)",
         pattern: Buffer.from(""), // Not used when regexPattern is set
         replacement: Buffer.from(""),
-        // Regex captures: $1 = variable letter, $2 = property path (supportedReasoningEfforts or reasoningEffort.supported)
+        // Regex captures:
+        //   $1 = reasoning effort variable (single letter)
+        //   $2 = model/config variable (single letter)
+        //   $3 = property path (supportedReasoningEfforts or reasoningEffort.supported)
         regexPattern:
-          /T!=="none"&&T!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(T\)/g,
-        regexReplacement: 'T!="none"&&T!="off"&&0&&$1.$2.includes(T)',
+          /([A-Z])!=="none"&&\1!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+        regexReplacement: '$1!="none"&&$1!="off"&&0&&$2.$3.includes($1)',
+        alreadyPatchedRegexPattern:
+          /([A-Z])!="none"&&\1!="off"&&0&&([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
       });
     }
 
@@ -860,8 +865,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             pattern: Buffer.from(""), // Not used when regexPattern is set
             replacement: Buffer.from(""),
             regexPattern:
-              /T!=="none"&&T!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(T\)/g,
-            regexReplacement: 'T!="none"&&T!="off"&&0&&$1.$2.includes(T)',
+              /([A-Z])!=="none"&&\1!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+            regexReplacement: '$1!="none"&&$1!="off"&&0&&$2.$3.includes($1)',
+            alreadyPatchedRegexPattern:
+              /([A-Z])!="none"&&\1!="off"&&0&&([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
           });
         }
 

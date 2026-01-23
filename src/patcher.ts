@@ -18,6 +18,8 @@ export interface Patch {
   // Regex-based matching: use $1, $2, etc. in regexReplacement for capture groups
   regexPattern?: RegExp;
   regexReplacement?: string;
+  // Optional regex to detect already-patched binaries when regexPattern is not found.
+  alreadyPatchedRegexPattern?: RegExp;
 }
 
 export interface PatchOptions {
@@ -104,9 +106,15 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
       if (matches.length === 0) {
         console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
-        // Check if already patched by looking for a sample replacement pattern
-        const sampleReplacement = patch.regexReplacement.replace(/\$\d+/g, "X");
-        const alreadyPatched = content.includes(sampleReplacement.slice(0, 20));
+        let alreadyPatched = false;
+        if (patch.alreadyPatchedRegexPattern) {
+          const alreadyPatchedRegex = new RegExp(patch.alreadyPatchedRegexPattern.source, "g");
+          alreadyPatched = alreadyPatchedRegex.test(content);
+        } else {
+          // Fallback: look for a sample replacement pattern (best-effort heuristic).
+          const sampleReplacement = patch.regexReplacement.replace(/\$\d+/g, "X");
+          alreadyPatched = content.includes(sampleReplacement.slice(0, 20));
+        }
         results.push({
           name: patch.name,
           found: 0,
