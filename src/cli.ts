@@ -448,10 +448,45 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Add reasoning-effort patch: set custom models to use "high" reasoning
     // Also modify UI conditions to show reasoning selector for custom models
     if (reasoningEffort) {
+      // Expand custom-model supported reasoning efforts to include "xhigh" in the UI.
+      //
+      // We can't freely change embedded JS string lengths without corrupting the bundle, so rewrites must
+      // preserve byte length. We avoid whitespace padding by expanding supportedReasoningEfforts to 3 values.
+      //
+      // Targets:
+      // - Custom model list builder (maps C => { ... supportedReasoningEfforts:["none"] ... })
+      // - Custom model resolver (t9 / getTuiModelConfig)
+      patches.push({
+        name: "reasoningEffortSupportedXHighList",
+        description: 'Enable ["low","high","xhigh"] in UI for custom model list',
+        pattern: Buffer.from(""), // Not used when regexPattern is set
+        replacement: Buffer.from(""),
+        regexPattern:
+          /id:([A-Za-z$_])\.id,displayName:\1\.displayName,shortDisplayName:\1\.(?:displayName|id),modelProvider:\1\.provider\s*,supportedReasoningEfforts:\["(?:none|high)"(?:,"xhigh")?\],defaultReasoningEffort:"(?:none|high)",isCustom:!([01]),noImageSupport:(?:\1\.noImageSupport|!1)/g,
+        regexReplacement:
+          'id:$1.id,displayName:$1.displayName,shortDisplayName:$1.displayName,modelProvider:$1.provider,supportedReasoningEfforts:["low","high","xhigh"],defaultReasoningEffort:"high",isCustom:!$2,noImageSupport:!1',
+        alreadyPatchedRegexPattern:
+          /id:([A-Za-z$_])\.id,displayName:\1\.displayName,shortDisplayName:\1\.displayName,modelProvider:\1\.provider,supportedReasoningEfforts:\["low","high","xhigh"\],defaultReasoningEffort:"high",isCustom:!([01]),noImageSupport:!1/g,
+      });
+
+      patches.push({
+        name: "reasoningEffortSupportedXHighResolver",
+        description: 'Enable ["low","high","xhigh"] in UI for custom model config resolver',
+        pattern: Buffer.from(""), // Not used when regexPattern is set
+        replacement: Buffer.from(""),
+        regexPattern:
+          /id:([A-Za-z$_])\.model,modelProvider:\1\.provider\s*,displayName:([A-Za-z$_]),shortDisplayName:\2,supportedReasoningEfforts:\["(?:none|high)"(?:,"xhigh")?\],defaultReasoningEffort:"(?:none|high)",isCustom:!([01]),noImageSupport:(?:\1\.noImageSupport|!1)/g,
+        regexReplacement:
+          'id:$1.model,modelProvider:$1.provider,displayName:$2,shortDisplayName:$2,supportedReasoningEfforts:["low","high","xhigh"],defaultReasoningEffort:"high",isCustom:!$3,noImageSupport:!1',
+        alreadyPatchedRegexPattern:
+          /id:([A-Za-z$_])\.model,modelProvider:\1\.provider,displayName:([A-Za-z$_]),shortDisplayName:\2,supportedReasoningEfforts:\["low","high","xhigh"\],defaultReasoningEffort:"high",isCustom:!([01]),noImageSupport:!1/g,
+      });
+
       // ["none"] is 8 chars, ["high"] is 8 chars - perfect match!
       patches.push({
         name: "reasoningEffortSupported",
-        description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
+        description:
+          'Fallback: Change supportedReasoningEfforts:["none"] to ["high"] (for legacy/custom: configs)',
         pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
         replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
       });
@@ -459,7 +494,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       // "none" is 4 chars, "high" is 4 chars - perfect match!
       patches.push({
         name: "reasoningEffortDefault",
-        description: 'Change defaultReasoningEffort:"none" to "high"',
+        description: 'Fallback: Change defaultReasoningEffort:"none" to "high"',
         pattern: Buffer.from('defaultReasoningEffort:"none"'),
         replacement: Buffer.from('defaultReasoningEffort:"high"'),
       });
@@ -488,7 +523,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       //   v0.39.0+: T!=="none"&&T!=="off"&&!X.supportedReasoningEfforts.includes(T)
       //   v0.43.0+: T!=="none"&&T!=="off"&&!R.reasoningEffort.supported.includes(T)
       //   v0.49.0+: !this.validateReasoningEffort(D,H.reasoningEffort)
-      // Using regex to match any single-letter variable (A-Z) and preserve property path
+      // Using regex to match any single-letter minified variable and preserve property path
       // Logic: && 0 && makes entire condition always false, bypassing validation
       patches.push({
         name: "reasoningEffortValidationBypass",
@@ -500,10 +535,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         //   $2 = model/config variable (single letter)
         //   $3 = property path (supportedReasoningEfforts or reasoningEffort.supported)
         regexPattern:
-          /([A-Z])!=="none"&&\1!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+          /([A-Za-z$_])!=="none"&&\1!=="off"&&!([A-Za-z$_])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
         regexReplacement: '$1!="none"&&$1!="off"&&0&&$2.$3.includes($1)',
         alreadyPatchedRegexPattern:
-          /([A-Z])!="none"&&\1!="off"&&0&&([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+          /([A-Za-z$_])!="none"&&\1!="off"&&0&&([A-Za-z$_])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
       });
     }
 
@@ -836,14 +871,39 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (meta.patches.reasoningEffort) {
           patches.push({
+            name: "reasoningEffortSupportedXHighList",
+            description: 'Enable ["low","high","xhigh"] in UI for custom model list',
+            pattern: Buffer.from(""), // Not used when regexPattern is set
+            replacement: Buffer.from(""),
+            regexPattern:
+              /id:([A-Za-z$_])\.id,displayName:\1\.displayName,shortDisplayName:\1\.(?:displayName|id),modelProvider:\1\.provider\s*,supportedReasoningEfforts:\["(?:none|high)"(?:,"xhigh")?\],defaultReasoningEffort:"(?:none|high)",isCustom:!([01]),noImageSupport:(?:\1\.noImageSupport|!1)/g,
+            regexReplacement:
+              'id:$1.id,displayName:$1.displayName,shortDisplayName:$1.displayName,modelProvider:$1.provider,supportedReasoningEfforts:["low","high","xhigh"],defaultReasoningEffort:"high",isCustom:!$2,noImageSupport:!1',
+            alreadyPatchedRegexPattern:
+              /id:([A-Za-z$_])\.id,displayName:\1\.displayName,shortDisplayName:\1\.displayName,modelProvider:\1\.provider,supportedReasoningEfforts:\["low","high","xhigh"\],defaultReasoningEffort:"high",isCustom:!([01]),noImageSupport:!1/g,
+          });
+          patches.push({
+            name: "reasoningEffortSupportedXHighResolver",
+            description: 'Enable ["low","high","xhigh"] in UI for custom model config resolver',
+            pattern: Buffer.from(""), // Not used when regexPattern is set
+            replacement: Buffer.from(""),
+            regexPattern:
+              /id:([A-Za-z$_])\.model,modelProvider:\1\.provider\s*,displayName:([A-Za-z$_]),shortDisplayName:\2,supportedReasoningEfforts:\["(?:none|high)"(?:,"xhigh")?\],defaultReasoningEffort:"(?:none|high)",isCustom:!([01]),noImageSupport:(?:\1\.noImageSupport|!1)/g,
+            regexReplacement:
+              'id:$1.model,modelProvider:$1.provider,displayName:$2,shortDisplayName:$2,supportedReasoningEfforts:["low","high","xhigh"],defaultReasoningEffort:"high",isCustom:!$3,noImageSupport:!1',
+            alreadyPatchedRegexPattern:
+              /id:([A-Za-z$_])\.model,modelProvider:\1\.provider,displayName:([A-Za-z$_]),shortDisplayName:\2,supportedReasoningEfforts:\["low","high","xhigh"\],defaultReasoningEffort:"high",isCustom:!([01]),noImageSupport:!1/g,
+          });
+          patches.push({
             name: "reasoningEffortSupported",
-            description: 'Change supportedReasoningEfforts:["none"] to ["high"]',
+            description:
+              'Fallback: Change supportedReasoningEfforts:["none"] to ["high"] (for legacy/custom: configs)',
             pattern: Buffer.from('supportedReasoningEfforts:["none"]'),
             replacement: Buffer.from('supportedReasoningEfforts:["high"]'),
           });
           patches.push({
             name: "reasoningEffortDefault",
-            description: 'Change defaultReasoningEffort:"none" to "high"',
+            description: 'Fallback: Change defaultReasoningEffort:"none" to "high"',
             pattern: Buffer.from('defaultReasoningEffort:"none"'),
             replacement: Buffer.from('defaultReasoningEffort:"high"'),
           });
@@ -865,10 +925,10 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             pattern: Buffer.from(""), // Not used when regexPattern is set
             replacement: Buffer.from(""),
             regexPattern:
-              /([A-Z])!=="none"&&\1!=="off"&&!([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+              /([A-Za-z$_])!=="none"&&\1!=="off"&&!([A-Za-z$_])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
             regexReplacement: '$1!="none"&&$1!="off"&&0&&$2.$3.includes($1)',
             alreadyPatchedRegexPattern:
-              /([A-Z])!="none"&&\1!="off"&&0&&([A-Z])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
+              /([A-Za-z$_])!="none"&&\1!="off"&&0&&([A-Za-z$_])\.(supportedReasoningEfforts|reasoningEffort\.supported)\.includes\(\1\)/g,
           });
         }
 
