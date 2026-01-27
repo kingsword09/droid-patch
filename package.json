@@ -1,6 +1,6 @@
 {
   "name": "droid-patch",
-  "version": "0.13.4",
+  "version": "0.13.5",
   "description": "CLI tool to patch droid binary with various modifications",
   "homepage": "https://github.com/kingsword09/droid-patch#readme",
   "bugs": {
