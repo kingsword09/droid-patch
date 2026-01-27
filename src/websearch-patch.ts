@@ -65,6 +65,7 @@ trap cleanup EXIT
 if ! start_proxy; then exit 1; fi
 
 export FACTORY_API_BASE_URL_OVERRIDE="http://127.0.0.1:$PORT"
+export FACTORY_API_BASE_URL="http://127.0.0.1:$PORT"
 exec "$DROID_BIN" "$@"
 `;
 }
@@ -203,6 +204,7 @@ ACTUAL_PORT=$(cat "$PORT_FILE")
 rm -f "$PORT_FILE"
 
 export FACTORY_API_BASE_URL_OVERRIDE="http://127.0.0.1:$ACTUAL_PORT"
+export FACTORY_API_BASE_URL="http://127.0.0.1:$ACTUAL_PORT"
 "$DROID_BIN" "$@"
 DROID_EXIT_CODE=$?
 exit $DROID_EXIT_CODE
@@ -291,6 +293,7 @@ if defined DROID_SEARCH_DEBUG echo [websearch] Proxy ready on port %ACTUAL_PORT%
 del "%PORT_FILE%" 2>nul
 
 set "FACTORY_API_BASE_URL_OVERRIDE=http://127.0.0.1:%ACTUAL_PORT%"
+set "FACTORY_API_BASE_URL=http://127.0.0.1:%ACTUAL_PORT%"
 "%DROID_BIN%" %*
 set "DROID_EXIT_CODE=%ERRORLEVEL%"
 
