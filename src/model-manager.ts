@@ -83,15 +83,6 @@ function rebuildModelIds(models: CustomModel[]): CustomModel[] {
 }
 
 /**
- * Update default model reference if needed
- */
-function updateDefaultModelRef(settings: FactorySettings, oldId: string, newId: string): void {
-  if (settings.sessionDefaultSettings?.model === oldId) {
-    settings.sessionDefaultSettings.model = newId;
-  }
-}
-
-/**
  * Add a custom model at specified index (or end if not specified)
  */
 export function addModel(

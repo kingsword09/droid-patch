@@ -2,23 +2,31 @@
   "name": "droid-patch",
   "version": "0.13.5",
   "description": "CLI tool to patch droid binary with various modifications",
+  "keywords": [
+    "binary",
+    "cli",
+    "droid",
+    "patch"
+  ],
   "homepage": "https://github.com/kingsword09/droid-patch#readme",
   "bugs": {
     "url": "https://github.com/kingsword09/droid-patch/issues"
   },
+  "license": "MIT",
+  "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kingsword09/droid-patch.git"
   },
-  "type": "module",
-  "main": "dist/index.mjs",
-  "types": "dist/index.d.mts",
   "bin": {
     "droid-patch": "./dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
   "scripts": {
     "build": "npx tsdown",
     "dev": "npx tsdown --watch",
@@ -30,14 +38,6 @@
     "format:check": "oxfmt --check",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [
-    "droid",
-    "patch",
-    "binary",
-    "cli"
-  ],
-  "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
-  "license": "MIT",
   "dependencies": {
     "tiny-bin": "^2.0.1"
   },

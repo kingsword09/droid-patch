@@ -136,7 +136,6 @@ function findDefaultDroidPath(): string {
 }
 
 bin("droid-patch", "CLI tool to patch droid binary with various modifications")
-  .package("droid-patch", version)
   .option(
     "--is-custom",
     "Patch isCustom:!0 to isCustom:!1 (enable context compression for custom models)",
@@ -174,20 +173,20 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .argument("[alias]", "Alias name for the patched binary")
   .action(async (options, args) => {
     const alias = args?.[0] as string | undefined;
-    const isCustom = options["is-custom"] as boolean;
-    const skipLogin = options["skip-login"] as boolean;
-    const apiBase = options["api-base"] as string | undefined;
-    const websearch = options["websearch"] as boolean;
-    const websearchProxy = options["websearch-proxy"] as boolean;
-    const standalone = options["standalone"] as boolean;
+    const isCustom = !!options.isCustom;
+    const skipLogin = !!options.skipLogin;
+    const apiBase = options.apiBase;
+    const websearch = !!options.websearch;
+    const websearchProxy = !!options.websearchProxy;
+    const standalone = !!options.standalone;
     // When --websearch is used with --api-base, forward to custom URL
     // Otherwise forward to official Factory API
     const websearchTarget = websearch ? apiBase || "https://api.factory.ai" : undefined;
-    const reasoningEffort = options["reasoning-effort"] as boolean;
-    const noTelemetry = options["disable-telemetry"] as boolean;
-    const dryRun = options["dry-run"] as boolean;
-    const path = (options.path as string) || findDefaultDroidPath();
-    const outputDir = options.output as string | undefined;
+    const reasoningEffort = !!options.reasoningEffort;
+    const noTelemetry = !!options.disableTelemetry;
+    const dryRun = !!options.dryRun;
+    const path = options.path || findDefaultDroidPath();
+    const outputDir = options.output;
     const backup = options.backup !== false;
     const verbose = options.verbose as boolean;
 
@@ -415,7 +414,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       const originalLength = originalUrl.length; // 22 chars
 
       // Validate and normalize the URL
-      let normalizedUrl = apiBase.replace(/\/+$/, ""); // Remove trailing slashes
+      const normalizedUrl = apiBase.replace(/\/+$/, ""); // Remove trailing slashes
 
       if (normalizedUrl.length > originalLength) {
         console.log(
@@ -699,9 +698,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   )
   .action(async (options, args) => {
     const target = args?.[0] as string | undefined;
-    const patchVersion = options["patch-version"] as string | undefined;
-    const droidVersion = options["droid-version"] as string | undefined;
-    const flagRaw = options.flag as string | undefined;
+    const patchVersion = options.patchVersion;
+    const droidVersion = options.droidVersion;
+    const flagRaw = options.flag;
     let flag: FilterFlag | undefined;
     if (flagRaw) {
       const allowedFlags: FilterFlag[] = [
@@ -773,9 +772,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
   .option("-v, --verbose", "Enable verbose output")
   .action(async (options, args) => {
     const aliasName = args?.[0] as string | undefined;
-    const dryRun = options["dry-run"] as boolean;
-    const newBinaryPath = (options.path as string) || findDefaultDroidPath();
-    const verbose = options.verbose as boolean;
+    const dryRun = !!options.dryRun;
+    const newBinaryPath = options.path || findDefaultDroidPath();
+    const verbose = !!options.verbose;
 
     console.log(styleText("cyan", "═".repeat(60)));
     console.log(styleText(["cyan", "bold"], "  Droid-Patch Update"));
