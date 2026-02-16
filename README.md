@@ -65,7 +65,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                    |
 | `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
-| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; options: `high`, `max`, `xhigh`)     |
+| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; options: `high`, `max`, `xhigh`)      |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
 | `--dry-run`           | Verify patches without actually modifying the binary                                                         |
 | `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |

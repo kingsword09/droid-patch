@@ -65,7 +65,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Tavily、Serper、Brave、SearXNG、DuckDuckGo             |
 | `--websearch-proxy`   | 原生搜索模式：使用模型内置的 web_search 能力（需要 proxy 插件）                                 |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
-| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（默认 `high`；可选：`high`、`max`、`xhigh`）               |
+| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（默认 `high`；可选：`high`、`max`、`xhigh`）                 |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
 | `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
 | `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                                              |
