@@ -65,7 +65,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                    |
 | `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
 | `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
-| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (set to high)                                          |
+| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; options: `high`, `max`, `xhigh`)      |
 | `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
 | `--dry-run`           | Verify patches without actually modifying the binary                                                         |
 | `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |
@@ -341,7 +341,7 @@ Configure your custom model in `~/.factory/settings.json`:
 
 Enables reasoning effort control for custom models by patching the binary to:
 
-1. Set `supportedReasoningEfforts` from `["none"]` to `["high"]`
+1. Set `supportedReasoningEfforts` from `["none"]` to `["high","max","xhigh"]`
 2. Set `defaultReasoningEffort` from `"none"` to `"high"`
 3. Enable the reasoning effort UI selector (normally hidden for custom models)
 4. Bypass validation to allow `xhigh` via settings.json
@@ -352,7 +352,7 @@ Enables reasoning effort control for custom models by patching the binary to:
 
 - The droid UI shows a reasoning effort selector when `supportedReasoningEfforts.length > 1`
 - Custom models are hardcoded with `["none"]`, hiding the selector
-- This patch changes the value to `["high"]` and modifies the UI condition to show the selector
+- This patch changes the value to `["high","max","xhigh"]` and modifies the UI condition to show the selector
 - The reasoning effort setting will be sent to your custom model's API
 
 **Usage**:
@@ -382,9 +382,8 @@ Available values:
 | Value | Description |
 |-------|-------------|
 | `high` | High reasoning effort (default after patching) |
+| `max` | Maximum reasoning effort |
 | `xhigh` | Extra high reasoning effort |
-| `medium` | Medium reasoning effort |
-| `low` | Low reasoning effort |
 
 **Note**: The `xhigh` value bypasses validation and is sent directly to your API. Make sure your custom model/proxy supports this parameter.
 

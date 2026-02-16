@@ -65,7 +65,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Tavily、Serper、Brave、SearXNG、DuckDuckGo             |
 | `--websearch-proxy`   | 原生搜索模式：使用模型内置的 web_search 能力（需要 proxy 插件）                                 |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
-| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（设置为 high）                                               |
+| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（默认 `high`；可选：`high`、`max`、`xhigh`）                 |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
 | `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
 | `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                                              |
@@ -335,7 +335,7 @@ pnpm dev
 
 通过修补二进制文件为自定义模型启用推理强度控制：
 
-1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high"]`
+1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high","max","xhigh"]`
 2. 将 `defaultReasoningEffort` 从 `"none"` 改为 `"high"`
 3. 启用推理强度 UI 选择器（通常对自定义模型隐藏）
 4. 绕过验证以允许通过 settings.json 设置 `xhigh`
@@ -346,7 +346,7 @@ pnpm dev
 
 - 当 `supportedReasoningEfforts.length > 1` 时，droid UI 会显示推理强度选择器
 - 自定义模型硬编码为 `["none"]`，隐藏了选择器
-- 此补丁将值改为 `["high"]` 并修改 UI 条件以显示选择器
+- 此补丁将值改为 `["high","max","xhigh"]` 并修改 UI 条件以显示选择器
 - 推理强度设置将发送到您的自定义模型 API
 
 **使用方法**：
@@ -376,9 +376,8 @@ npx droid-patch --is-custom --reasoning-effort droid-full
 | 值 | 描述 |
 |-------|-------------|
 | `high` | 高推理强度（补丁后的默认值） |
+| `max` | 最大推理强度 |
 | `xhigh` | 超高推理强度 |
-| `medium` | 中等推理强度 |
-| `low` | 低推理强度 |
 
 **注意**：`xhigh` 值会绕过验证直接发送到 API。请确保您的自定义模型/代理支持此参数。
 
