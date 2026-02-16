@@ -2,23 +2,31 @@
   "name": "droid-patch",
   "version": "0.13.5",
   "description": "CLI tool to patch droid binary with various modifications",
+  "keywords": [
+    "binary",
+    "cli",
+    "droid",
+    "patch"
+  ],
   "homepage": "https://github.com/kingsword09/droid-patch#readme",
   "bugs": {
     "url": "https://github.com/kingsword09/droid-patch/issues"
   },
+  "license": "MIT",
+  "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kingsword09/droid-patch.git"
   },
-  "type": "module",
-  "main": "dist/index.mjs",
-  "types": "dist/index.d.mts",
   "bin": {
     "droid-patch": "./dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
   "scripts": {
     "build": "npx tsdown",
     "dev": "npx tsdown --watch",
@@ -30,23 +38,15 @@
     "format:check": "oxfmt --check",
     "prepublishOnly": "npm run build"
   },
-  "keywords": [
-    "droid",
-    "patch",
-    "binary",
-    "cli"
-  ],
-  "author": "Kingsword kingsword09 <kingsword09@gmail.com>",
-  "license": "MIT",
   "dependencies": {
-    "tiny-bin": "^1.11.3"
+    "tiny-bin": "^2.0.1"
   },
   "devDependencies": {
-    "@types/node": "^22.19.3",
-    "oxfmt": "^0.17.0",
-    "oxlint": "^1.32.0",
-    "oxlint-tsgolint": "^0.9.0",
-    "tsdown": "^0.17.4",
+    "@types/node": "^25.2.3",
+    "oxfmt": "^0.32.0",
+    "oxlint": "^1.47.0",
+    "oxlint-tsgolint": "^0.13.0",
+    "tsdown": "^0.20.3",
     "typescript": "^5.9.3"
   },
   "engines": {
