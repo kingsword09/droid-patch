@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "lib": ["ES2023"],
+    "types": ["node"],
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
