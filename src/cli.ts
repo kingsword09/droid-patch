@@ -471,7 +471,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       patches.push({
         name: "reasoningEffortSupportedXHighResolverLegacy",
-        description: 'Enable ["high","max","xhigh"] in UI for custom model config resolver (legacy)',
+        description:
+          'Enable ["high","max","xhigh"] in UI for custom model config resolver (legacy)',
         pattern: Buffer.from(""), // Not used when regexPattern is set
         replacement: Buffer.from(""),
         suppressCheckUnlessFound: true,
@@ -914,7 +915,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           });
           patches.push({
             name: "reasoningEffortSupportedXHighResolverLegacy",
-            description: 'Enable ["high","max","xhigh"] in UI for custom model config resolver (legacy)',
+            description:
+              'Enable ["high","max","xhigh"] in UI for custom model config resolver (legacy)',
             pattern: Buffer.from(""), // Not used when regexPattern is set
             replacement: Buffer.from(""),
             suppressCheckUnlessFound: true,

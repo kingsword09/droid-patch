@@ -91,7 +91,9 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     const shouldSkip =
       patch.skipIfAnySucceeded?.some((dependencyName) => {
         const dependencyResult = resultByName.get(dependencyName);
-        return !!dependencyResult && (dependencyResult.found > 0 || dependencyResult.alreadyPatched);
+        return (
+          !!dependencyResult && (dependencyResult.found > 0 || dependencyResult.alreadyPatched)
+        );
       }) ?? false;
 
     if (shouldSkip) {
