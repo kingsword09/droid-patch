@@ -61,6 +61,90 @@ function getDroidVersion(droidPath: string): string | undefined {
   }
 }
 
+function parseSemver(versionText: string): [number, number, number] | null {
+  const match = versionText.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(left: string, right: string): number {
+  const l = parseSemver(left);
+  const r = parseSemver(right);
+  if (!l || !r) {
+    throw new Error(`Invalid semver comparison: "${left}" vs "${right}"`);
+  }
+
+  for (let i = 0; i < 3; i++) {
+    if (l[i] > r[i]) return 1;
+    if (l[i] < r[i]) return -1;
+  }
+  return 0;
+}
+
+interface VersionedPatchRule {
+  id: string;
+  minVersion?: string;
+  maxVersion?: string; // Exclusive upper bound
+  buildPatches: () => Patch[];
+}
+
+function matchesVersionRule(droidVersion: string, rule: VersionedPatchRule): boolean {
+  if (rule.minVersion && compareSemver(droidVersion, rule.minVersion) < 0) {
+    return false;
+  }
+  if (rule.maxVersion && compareSemver(droidVersion, rule.maxVersion) >= 0) {
+    return false;
+  }
+  return true;
+}
+
+function resolveVersionedPatches(
+  featureName: string,
+  droidVersion: string | undefined,
+  rules: VersionedPatchRule[],
+): Patch[] {
+  if (!droidVersion) {
+    throw new Error(`Unable to detect droid version for ${featureName}`);
+  }
+  if (!parseSemver(droidVersion)) {
+    throw new Error(`Unsupported droid version format "${droidVersion}" for ${featureName}`);
+  }
+
+  const matchedRule = rules.find((rule) => matchesVersionRule(droidVersion, rule));
+  if (!matchedRule) {
+    throw new Error(`No patch rule matched ${featureName} on droid ${droidVersion}`);
+  }
+  return matchedRule.buildPatches();
+}
+
+const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
+  {
+    id: "skip-login-legacy",
+    maxVersion: "0.68.0",
+    buildPatches: () => [
+      {
+        name: "skipLogin",
+        description: 'Replace process.env.FACTORY_API_KEY with "fk-droid-patch-skip-00000"',
+        pattern: Buffer.from("process.env.FACTORY_API_KEY"),
+        replacement: Buffer.from('"fk-droid-patch-skip-00000"'),
+      },
+    ],
+  },
+  {
+    id: "skip-login-v068-plus",
+    minVersion: "0.68.0",
+    buildPatches: () => [
+      {
+        name: "factoryApiKeyLookupV068",
+        description:
+          'Replace process.env[__.FACTORY_API_KEY]?.trim() with "fk-droid-patch-skip-00000000000000000"',
+        pattern: Buffer.from("process.env[__.FACTORY_API_KEY]?.trim()"),
+        replacement: Buffer.from('"fk-droid-patch-skip-00000000000000000"'),
+      },
+    ],
+  },
+];
+
 function findDefaultDroidPath(): string {
   const home = homedir();
 
@@ -189,6 +273,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     const outputDir = options.output;
     const backup = options.backup !== false;
     const verbose = options.verbose as boolean;
+    const droidVersion = getDroidVersion(path);
 
     // If -o is specified with alias, output to that directory with alias name
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
@@ -261,7 +346,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       const aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
 
       // Save metadata for update command
-      const droidVersion = getDroidVersion(path);
       const metadata = createMetadata(
         alias,
         path,
@@ -397,12 +481,17 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Add skip-login patch: replace process.env.FACTORY_API_KEY with a fixed fake key
     // "process.env.FACTORY_API_KEY" is 27 chars, we replace with "fk-droid-patch-skip-00000" (25 chars + quotes = 27)
     if (skipLogin) {
-      patches.push({
-        name: "skipLogin",
-        description: 'Replace process.env.FACTORY_API_KEY with "fk-droid-patch-skip-00000"',
-        pattern: Buffer.from("process.env.FACTORY_API_KEY"),
-        replacement: Buffer.from('"fk-droid-patch-skip-00000"'),
-      });
+      try {
+        patches.push(
+          ...resolveVersionedPatches("--skip-login", droidVersion, SKIP_LOGIN_PATCH_RULES),
+        );
+      } catch (error) {
+        console.log(styleText("red", `Error: ${(error as Error).message}`));
+        if (!droidVersion) {
+          console.log(styleText("gray", "Please use -p to point to a runnable droid binary."));
+        }
+        process.exit(1);
+      }
     }
 
     // Add api-base patch: replace the Factory API base URL
@@ -678,7 +767,6 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         // Save metadata for update command
-        const droidVersion = getDroidVersion(path);
         const metadata = createMetadata(
           alias,
           path,
@@ -843,6 +931,13 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     console.log(styleText("white", `Using droid binary: ${newBinaryPath}`));
     console.log(styleText("white", `Found ${metaList.length} alias(es) to update`));
+    const newDroidVersion = getDroidVersion(newBinaryPath);
+    if (!newDroidVersion) {
+      console.log(
+        styleText("yellow", "[!] Warning: Could not detect droid version from the new binary"),
+      );
+      console.log(styleText("gray", "    skip-login aliases may fail to update"));
+    }
     if (dryRun) {
       console.log(styleText("blue", "(DRY RUN - no changes will be made)"));
     }
@@ -878,12 +973,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         if (meta.patches.skipLogin) {
-          patches.push({
-            name: "skipLogin",
-            description: "Replace process.env.FACTORY_API_KEY with fake key",
-            pattern: Buffer.from("process.env.FACTORY_API_KEY"),
-            replacement: Buffer.from('"fk-droid-patch-skip-00000"'),
-          });
+          patches.push(
+            ...resolveVersionedPatches("skip-login", newDroidVersion, SKIP_LOGIN_PATCH_RULES),
+          );
         }
 
         // Only apply apiBase binary patch when NOT using websearch
@@ -1161,7 +1253,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         // Update metadata
         meta.updatedAt = new Date().toISOString();
         meta.originalBinaryPath = newBinaryPath;
-        meta.droidVersion = getDroidVersion(newBinaryPath);
+        meta.droidVersion = newDroidVersion;
         meta.droidPatchVersion = version;
         await saveAliasMetadata(meta);
 
