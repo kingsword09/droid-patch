@@ -120,8 +120,7 @@ function resolveVersionedPatches(
 const SKIP_LOGIN_V068_PLUS_REGEX =
   /process\.env\[[A-Za-z_$][A-Za-z0-9_$]*\.FACTORY_API_KEY\](?:\?\.trim\(\))?/g;
 const SKIP_LOGIN_V068_PLUS_REPLACEMENT_PREFIX = "fk-droid-patch-skip-";
-const SKIP_LOGIN_V068_PLUS_PATCHED_REGEX =
-  /(?:"fk-droid-patch-skip-[0-9]*"|"fk-skip-login"[ ]*)/g;
+const SKIP_LOGIN_V068_PLUS_PATCHED_REGEX = /(?:"fk-droid-patch-skip-[0-9]*"|"fk-skip-login"[ ]*)/g;
 
 function createFixedLengthStringLiteral(prefix: string, targetLength: number): string {
   if (targetLength < 2) {
@@ -157,7 +156,7 @@ const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
       {
         name: "factoryApiKeyLookupV068",
         description:
-          'Replace process.env[<minified>.FACTORY_API_KEY]?.trim() with a fixed-length fake key via regex matching',
+          "Replace process.env[<minified>.FACTORY_API_KEY]?.trim() with a fixed-length fake key via regex matching",
         pattern: Buffer.from(""),
         replacement: Buffer.from(""),
         regexPattern: SKIP_LOGIN_V068_PLUS_REGEX,

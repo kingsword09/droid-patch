@@ -308,7 +308,12 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     // Apply patch immediately to working buffer so later patches see updated content
     if (!dryRun) {
       for (const pos of positions) {
-        writeReplacementBytes(workingBuffer, pos, matchedVariant.pattern, matchedVariant.replacement);
+        writeReplacementBytes(
+          workingBuffer,
+          pos,
+          matchedVariant.pattern,
+          matchedVariant.replacement,
+        );
       }
     }
 
