@@ -17,7 +17,7 @@ export interface Patch {
   }>;
   // Regex-based matching: use $1, $2, etc. in regexReplacement for capture groups
   regexPattern?: RegExp;
-  regexReplacement?: string;
+  regexReplacement?: string | ((match: string) => string);
   // Optional regex to detect already-patched binaries when regexPattern is not found.
   alreadyPatchedRegexPattern?: RegExp;
   // Skip this patch when any named patch has already matched or is already patched.
@@ -52,6 +52,25 @@ export interface PatchDroidResult {
   outputPath?: string;
   noPatchNeeded?: boolean;
   patchedCount?: number;
+}
+
+function writeReplacementBytes(
+  target: Buffer,
+  position: number,
+  matchBytes: Buffer,
+  replacementBytes: Buffer,
+): void {
+  if (replacementBytes.length > matchBytes.length) {
+    throw new Error(
+      `Replacement is longer than matched content: ${replacementBytes.length} > ${matchBytes.length}`,
+    );
+  }
+
+  replacementBytes.copy(target, position, 0, replacementBytes.length);
+
+  if (replacementBytes.length < matchBytes.length) {
+    target.fill(0x20, position + replacementBytes.length, position + matchBytes.length);
+  }
 }
 
 export async function patchDroid(options: PatchOptions): Promise<PatchDroidResult> {
@@ -133,10 +152,10 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
 
       let match;
       while ((match = regex.exec(content)) !== null) {
-        const replacement = match[0].replace(
-          new RegExp(patch.regexPattern.source),
-          patch.regexReplacement,
-        );
+        const replacement =
+          typeof patch.regexReplacement === "function"
+            ? patch.regexReplacement(match[0])
+            : match[0].replace(new RegExp(patch.regexPattern.source), patch.regexReplacement);
         matches.push({
           charIndex: match.index,
           match: match[0],
@@ -149,7 +168,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
         if (patch.alreadyPatchedRegexPattern) {
           const alreadyPatchedRegex = new RegExp(patch.alreadyPatchedRegexPattern.source, "g");
           alreadyPatched = alreadyPatchedRegex.test(content);
-        } else {
+        } else if (typeof patch.regexReplacement === "string") {
           // Fallback: look for a sample replacement pattern (best-effort heuristic).
           const sampleReplacement = patch.regexReplacement.replace(/\$\d+/g, "X");
           alreadyPatched = content.includes(sampleReplacement.slice(0, 20));
@@ -189,7 +208,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
             console.log(
               styleText(
                 "yellow",
-                `    ! Warning: Length mismatch: ${matchBuffer.length} vs ${replacementBuffer.length}`,
+                `    ! Length mismatch: ${matchBuffer.length} vs ${replacementBuffer.length} (padding remainder with spaces)`,
               ),
             );
           }
@@ -197,7 +216,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
           // Find the actual byte position in the buffer
           const bytePos = workingBuffer.indexOf(matchBuffer);
           if (bytePos !== -1) {
-            replacementBuffer.copy(workingBuffer, bytePos, 0, replacementBuffer.length);
+            writeReplacementBytes(workingBuffer, bytePos, matchBuffer, replacementBuffer);
           }
         }
       }
@@ -289,7 +308,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     // Apply patch immediately to working buffer so later patches see updated content
     if (!dryRun) {
       for (const pos of positions) {
-        matchedVariant.replacement.copy(workingBuffer, pos);
+        writeReplacementBytes(workingBuffer, pos, matchedVariant.pattern, matchedVariant.replacement);
       }
     }
 
