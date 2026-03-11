@@ -1,6 +1,6 @@
 {
   "name": "droid-patch",
-  "version": "0.15.1",
+  "version": "0.15.2",
   "description": "CLI tool to patch droid binary with various modifications",
   "keywords": [
     "binary",
