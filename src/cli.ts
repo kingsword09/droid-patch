@@ -88,6 +88,59 @@ interface VersionedPatchRule {
   buildPatches: () => Patch[];
 }
 
+function regexMatchesText(text: string, regex: RegExp): boolean {
+  const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+  return new RegExp(regex.source, flags).test(text);
+}
+
+function patchMatchesBinary(binaryBuffer: Buffer, binaryText: string, patch: Patch): boolean {
+  if (patch.regexPattern) {
+    return (
+      regexMatchesText(binaryText, patch.regexPattern) ||
+      (!!patch.alreadyPatchedRegexPattern &&
+        regexMatchesText(binaryText, patch.alreadyPatchedRegexPattern))
+    );
+  }
+
+  const variants = [
+    { pattern: patch.pattern, replacement: patch.replacement },
+    ...(patch.variants || []),
+  ];
+
+  return variants.some(
+    (variant) =>
+      (!!variant.pattern.length && binaryBuffer.includes(variant.pattern)) ||
+      (!!variant.replacement.length && binaryBuffer.includes(variant.replacement)),
+  );
+}
+
+function inferVersionedPatchRuleFromBinary(
+  droidPath: string | undefined,
+  rules: VersionedPatchRule[],
+): VersionedPatchRule | undefined {
+  if (!droidPath || !existsSync(droidPath)) {
+    return undefined;
+  }
+
+  try {
+    const binaryBuffer = readFileSync(droidPath);
+    const binaryText = binaryBuffer.toString("utf-8");
+    const matchingRules = rules.filter((rule) =>
+      rule
+        .buildPatches()
+        .every((patch) => patchMatchesBinary(binaryBuffer, binaryText, patch)),
+    );
+
+    if (matchingRules.length === 1) {
+      return matchingRules[0];
+    }
+  } catch {
+    // Fall through to the existing version-based errors below.
+  }
+
+  return undefined;
+}
+
 function matchesVersionRule(droidVersion: string, rule: VersionedPatchRule): boolean {
   if (rule.minVersion && compareSemver(droidVersion, rule.minVersion) < 0) {
     return false;
@@ -102,7 +155,20 @@ function resolveVersionedPatches(
   featureName: string,
   droidVersion: string | undefined,
   rules: VersionedPatchRule[],
+  droidPath?: string,
 ): Patch[] {
+  if (droidVersion && parseSemver(droidVersion)) {
+    const matchedRule = rules.find((rule) => matchesVersionRule(droidVersion, rule));
+    if (matchedRule) {
+      return matchedRule.buildPatches();
+    }
+  }
+
+  const inferredRule = inferVersionedPatchRuleFromBinary(droidPath, rules);
+  if (inferredRule) {
+    return inferredRule.buildPatches();
+  }
+
   if (!droidVersion) {
     throw new Error(`Unable to detect droid version for ${featureName}`);
   }
@@ -207,23 +273,28 @@ function findDefaultDroidPath(): string {
     return join(home, ".droid", "bin", "droid.exe");
   }
 
-  // Unix: Try `which droid` first to find droid in PATH
-  try {
-    const result = execSync("which droid", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-    if (result && existsSync(result)) {
-      return result;
+  // Unix: Try PATH lookups first.
+  for (const lookupCommand of ["command -v droid", "which droid"]) {
+    try {
+      const result = execSync(lookupCommand, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      const firstResult = result.split(/\r?\n/)[0];
+      if (firstResult && existsSync(firstResult)) {
+        return firstResult;
+      }
+    } catch {
+      // Continue to the next lookup strategy.
     }
-  } catch {
-    // which command failed, continue with fallback paths
   }
 
   // Common installation paths (Unix)
   const paths = [
     // Default sh install location
     join(home, ".droid", "bin", "droid"),
+    // Common user-local install location
+    join(home, ".local", "bin", "droid"),
     // Homebrew on Apple Silicon
     "/opt/homebrew/bin/droid",
     // Homebrew on Intel Mac / Linux
@@ -506,7 +577,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     if (skipLogin) {
       try {
         patches.push(
-          ...resolveVersionedPatches("--skip-login", droidVersion, SKIP_LOGIN_PATCH_RULES),
+          ...resolveVersionedPatches("--skip-login", droidVersion, SKIP_LOGIN_PATCH_RULES, path),
         );
       } catch (error) {
         console.log(styleText("red", `Error: ${(error as Error).message}`));
@@ -997,7 +1068,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         if (meta.patches.skipLogin) {
           patches.push(
-            ...resolveVersionedPatches("skip-login", newDroidVersion, SKIP_LOGIN_PATCH_RULES),
+            ...resolveVersionedPatches(
+              "skip-login",
+              newDroidVersion,
+              SKIP_LOGIN_PATCH_RULES,
+              newBinaryPath,
+            ),
           );
         }
 
