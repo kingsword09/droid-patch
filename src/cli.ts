@@ -126,9 +126,7 @@ function inferVersionedPatchRuleFromBinary(
     const binaryBuffer = readFileSync(droidPath);
     const binaryText = binaryBuffer.toString("utf-8");
     const matchingRules = rules.filter((rule) =>
-      rule
-        .buildPatches()
-        .every((patch) => patchMatchesBinary(binaryBuffer, binaryText, patch)),
+      rule.buildPatches().every((patch) => patchMatchesBinary(binaryBuffer, binaryText, patch)),
     );
 
     if (matchingRules.length === 1) {
