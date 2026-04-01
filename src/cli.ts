@@ -232,6 +232,65 @@ const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
   },
 ];
 
+const FACTORYD_SELF_PATH_REGEX =
+  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
+const FACTORYD_SELF_PATH_PATCHED_REGEX =
+  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{return process\.execPath\}/g;
+const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
+  /let ([A-Za-z$_][A-Za-z0-9$_]*)=await VX\(\);if\(!\1\|\|!\1\.orgId\)throw new LT\("Daemon not authenticated"\);let ([A-Za-z$_][A-Za-z0-9$_]*)=await AyH\(([A-Za-z$_][A-Za-z0-9$_]*)\);if\(!\2\.orgId\)throw new LT\("Client not affiliated with an organization"\);if\(SH\("Client credential verified"\),\2\.userId!==\1\.userId\|\|\2\.orgId!==\1\.orgId\)throw new LT\("Client identity does not match daemon identity"\);/g;
+const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
+  /[A-Za-z$_][A-Za-z0-9$_]*\[0\]=="f"&&[A-Za-z$_][A-Za-z0-9$_]*\[1\]=="k"\?\{orgId:"f",userId:"f"\}:await VX\(\),/g;
+
+function createFactorydSelfPathPatch(): Patch {
+  return {
+    name: "factorydSelfPath",
+    description:
+      "Force factoryd auto-start to reuse the current executable instead of falling back to plain droid",
+    pattern: Buffer.from(""),
+    replacement: Buffer.from(""),
+    regexPattern: FACTORYD_SELF_PATH_REGEX,
+    regexReplacement: "function $1($2){return process.execPath}",
+    alreadyPatchedRegexPattern: FACTORYD_SELF_PATH_PATCHED_REGEX,
+  };
+}
+
+function createFactorydSkipLoginAuthPatch(): Patch {
+  return {
+    name: "factorydSkipLoginAuth",
+    description: "Allow mission/factoryd auth to reuse fk- API key sessions without a WorkOS login",
+    pattern: Buffer.from(""),
+    replacement: Buffer.from(""),
+    regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
+    regexReplacement:
+      'let $1=$3[0]=="f"&&$3[1]=="k"?{orgId:"f",userId:"f"}:await VX(),$2=$3[0]=="f"&&$3[1]=="k"?$1:await AyH($3);if(!$1||!$1.orgId)throw new LT("Daemon not authenticated");if(!$2.orgId||!($3[0]=="f"&&$3[1]=="k")&&($2.userId!==$1.userId||$2.orgId!==$1.orgId))throw new LT("Client identity does not match daemon identity");',
+    alreadyPatchedRegexPattern: FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX,
+  };
+}
+
+type BinaryPatchConfig = {
+  isCustom: boolean;
+  skipLogin: boolean;
+  apiBase: string | null | undefined;
+  websearch: boolean;
+  websearchProxy?: boolean;
+  reasoningEffort: boolean;
+  noTelemetry?: boolean;
+};
+
+function needsBinaryPatches(config: BinaryPatchConfig): boolean {
+  return (
+    config.isCustom ||
+    config.skipLogin ||
+    config.reasoningEffort ||
+    !!config.noTelemetry ||
+    (!!config.apiBase && !config.websearch && !config.websearchProxy)
+  );
+}
+
+function createMissionFactorydPatches(): Patch[] {
+  return [createFactorydSelfPathPatch(), createFactorydSkipLoginAuthPatch()];
+}
+
 function findDefaultDroidPath(): string {
   const home = homedir();
 
@@ -370,12 +429,15 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // If -o is specified with alias, output to that directory with alias name
     const outputPath = outputDir && alias ? join(outputDir, alias) : undefined;
 
-    const needsBinaryPatch =
-      !!isCustom ||
-      !!skipLogin ||
-      !!reasoningEffort ||
-      !!noTelemetry ||
-      (!!apiBase && !websearch && !websearchProxy);
+    const needsBinaryPatch = needsBinaryPatches({
+      isCustom: !!isCustom,
+      skipLogin: !!skipLogin,
+      apiBase,
+      websearch: !!websearch,
+      websearchProxy: !!websearchProxy,
+      reasoningEffort: !!reasoningEffort,
+      noTelemetry: !!noTelemetry,
+    });
 
     // Check for conflicting flags
     if (websearch && websearchProxy) {
@@ -560,7 +622,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     console.log(styleText("cyan", "═".repeat(60)));
     console.log();
 
-    const patches: Patch[] = [];
+    const patches: Patch[] = createMissionFactorydPatches();
     if (isCustom) {
       patches.push({
         name: "isCustom",
@@ -804,8 +866,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         console.log(styleText(["blue", "bold"], "  DRY RUN COMPLETE"));
         console.log(styleText("blue", "═".repeat(60)));
         console.log();
-        console.log(styleText("gray", "To apply the patches, run without --dry-run:"));
-        console.log(styleText("cyan", `  npx droid-patch --is-custom ${alias || "<alias-name>"}`));
+        console.log(
+          styleText("gray", "To apply the patches, rerun the same command without --dry-run."),
+        );
         process.exit(0);
       }
 
@@ -1053,7 +1116,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
       try {
         // Build patch list based on metadata
-        const patches: Patch[] = [];
+        const patches: Patch[] = needsBinaryPatches(meta.patches)
+          ? createMissionFactorydPatches()
+          : [];
 
         if (meta.patches.isCustom) {
           patches.push({
