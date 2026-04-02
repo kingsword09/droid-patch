@@ -1307,7 +1307,8 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         // If websearch is enabled, regenerate wrapper files
         // Support both new 'websearch' field and old 'proxy' field for backward compatibility
-        const hasWebsearch = meta.patches.websearch || !!meta.patches.proxy;
+        const hasWebsearch =
+          meta.patches.websearch || !!meta.patches.websearchProxy || !!meta.patches.proxy;
         if (hasWebsearch) {
           // Determine forward target: apiBase > proxy (legacy) > default
           const forwardTarget =
@@ -1319,6 +1320,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             meta.name,
             forwardTarget,
             meta.patches.standalone || false,
+            meta.patches.websearchProxy || false,
           );
           execTargetPath = wrapperScript;
           if (verbose) {
