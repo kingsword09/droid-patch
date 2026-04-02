@@ -66,6 +66,9 @@ if ! start_proxy; then exit 1; fi
 
 export FACTORY_API_BASE_URL_OVERRIDE="http://127.0.0.1:$PORT"
 export FACTORY_API_BASE_URL="http://127.0.0.1:$PORT"
+export FACTORY_APP_BASE_URL_OVERRIDE="http://127.0.0.1:$PORT"
+export FACTORY_APP_BASE_URL="http://127.0.0.1:$PORT"
+export TOOLS_WEBSEARCH_BASE_URL="http://127.0.0.1:$PORT"
 exec "$DROID_BIN" "$@"
 `;
 }
@@ -151,7 +154,7 @@ should_passthrough() {
   for arg in "$@"; do
     if [ "$arg" = "--" ]; then end_opts=1; continue; fi
     if [ "$end_opts" -eq 0 ] && [[ "$arg" == -* ]]; then continue; fi
-    case "$arg" in help|version|completion|completions|exec|plugin) return 0 ;; esac
+    case "$arg" in help|version|completion|completions|plugin) return 0 ;; esac
     break
   done
   return 1
@@ -205,6 +208,9 @@ rm -f "$PORT_FILE"
 
 export FACTORY_API_BASE_URL_OVERRIDE="http://127.0.0.1:$ACTUAL_PORT"
 export FACTORY_API_BASE_URL="http://127.0.0.1:$ACTUAL_PORT"
+export FACTORY_APP_BASE_URL_OVERRIDE="http://127.0.0.1:$ACTUAL_PORT"
+export FACTORY_APP_BASE_URL="http://127.0.0.1:$ACTUAL_PORT"
+export TOOLS_WEBSEARCH_BASE_URL="http://127.0.0.1:$ACTUAL_PORT"
 "$DROID_BIN" "$@"
 DROID_EXIT_CODE=$?
 exit $DROID_EXIT_CODE
@@ -240,7 +246,6 @@ for %%a in (%*) do (
     if "%%a"=="version" set "PASSTHROUGH=1"
     if "%%a"=="completion" set "PASSTHROUGH=1"
     if "%%a"=="completions" set "PASSTHROUGH=1"
-    if "%%a"=="exec" set "PASSTHROUGH=1"
     if "%%a"=="plugin" set "PASSTHROUGH=1"
 )
 if "%PASSTHROUGH%"=="1" (
@@ -294,6 +299,9 @@ del "%PORT_FILE%" 2>nul
 
 set "FACTORY_API_BASE_URL_OVERRIDE=http://127.0.0.1:%ACTUAL_PORT%"
 set "FACTORY_API_BASE_URL=http://127.0.0.1:%ACTUAL_PORT%"
+set "FACTORY_APP_BASE_URL_OVERRIDE=http://127.0.0.1:%ACTUAL_PORT%"
+set "FACTORY_APP_BASE_URL=http://127.0.0.1:%ACTUAL_PORT%"
+set "TOOLS_WEBSEARCH_BASE_URL=http://127.0.0.1:%ACTUAL_PORT%"
 "%DROID_BIN%" %*
 set "DROID_EXIT_CODE=%ERRORLEVEL%"
 
@@ -373,6 +381,7 @@ const { execSync } = require('child_process');
 
 const PORT = process.env.DROID_SEARCH_PORT || 23119;
 const FACTORY_API = 'https://api.factory.ai';
+const SEARCH_ROUTE_ALIASES = new Set(['/api/tools/web-search', '/api/tools/exa/search']);
 
 async function searchGooglePSE(query, num) {
   const apiKey = process.env.GOOGLE_PSE_API_KEY;
@@ -416,6 +425,10 @@ async function search(query, num) {
   return searchDuckDuckGo(query, num);
 }
 
+function isSearchRequest(url, method) {
+  return method === 'POST' && SEARCH_ROUTE_ALIASES.has(url.pathname);
+}
+
 function isPortInUse(port) {
   try { execSync(\`curl -s http://127.0.0.1:\${port}/health\`, { timeout: 1000 }); return true; } catch { return false; }
 }
@@ -428,7 +441,7 @@ if (!isPortInUse(PORT)) {
       res.end(JSON.stringify({ status: 'ok' }));
       return;
     }
-    if (url.pathname === '/api/tools/exa/search' && req.method === 'POST') {
+    if (isSearchRequest(url, req.method)) {
       let body = '';
       req.on('data', c => body += c);
       req.on('end', async () => {

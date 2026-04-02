@@ -17,8 +17,13 @@ const fs = require('fs');
 const DEBUG = process.env.DROID_SEARCH_DEBUG === '1';
 const PORT = parseInt(process.env.SEARCH_PROXY_PORT || '0');
 const FACTORY_API = 'https://api.factory.ai';
+const SEARCH_ROUTE_ALIASES = new Set(['/api/tools/web-search', '/api/tools/exa/search']);
 
 function log() { if (DEBUG) console.error.apply(console, ['[websearch]'].concat(Array.from(arguments))); }
+
+function isSearchRequest(url, method) {
+  return method === 'POST' && SEARCH_ROUTE_ALIASES.has(url.pathname);
+}
 
 // === External Search Providers ===
 
@@ -192,7 +197,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === '/api/tools/exa/search' && req.method === 'POST') {
+  if (isSearchRequest(url, req.method)) {
     let body = '';
     req.on('data', function(c) { body += c; });
     req.on('end', async function() {
