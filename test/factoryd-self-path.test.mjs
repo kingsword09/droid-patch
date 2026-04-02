@@ -12,11 +12,23 @@ const IS_WINDOWS = platform() === "win32";
 const FACTORYD_PATH_SOURCE =
   'function $QH(H){if(path.basename(process.execPath).includes("droid"))return process.execPath;return H?"droid-dev":"droid"}';
 const FACTORYD_PATH_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
+  /(function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\()([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)(\)return process\.execPath;return \3\?"droid-dev":"droid"\})/g;
+const FACTORYD_PATH_PATCHED_REGEX =
+  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_SOURCE =
-  'let D=await VX();if(!D||!D.orgId)throw new LT("Daemon not authenticated");let C=await AyH(L);if(!C.orgId)throw new LT("Client not affiliated with an organization");if(SH("Client credential verified"),C.userId!==D.userId||C.orgId!==D.orgId)throw new LT("Client identity does not match daemon identity");';
+  'async function LXT(H){let T=N8().apiBaseUrl,R=await fetch(`${T}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),A=await R.text();if(!R.ok)throw new LT("API key verification failed",{statusCode:R.status,body:A});let L=Nd(A,JL9,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}';
+const FACTORYD_SKIP_LOGIN_AUTH_VARIANTS = [
+  FACTORYD_SKIP_LOGIN_AUTH_SOURCE,
+  'async function UyH(H){let A=w0().apiBaseUrl,T=await fetch(`${A}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),R=await T.text();if(!T.ok)throw new SH("API key verification failed",{statusCode:T.status,body:R});let L=wj(R,eET,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}',
+  'async function KkH(H){let A=f0().apiBaseUrl,T=await fetch(`${A}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),R=await T.text();if(!T.ok)throw new bH("API key verification failed",{statusCode:T.status,body:R});let L=uj(R,gOT,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}',
+  'async function QMH(H){let A=t9().apiBaseUrl,T=await fetch(`${A}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),R=await T.text();if(!T.ok)throw new zH("API key verification failed",{statusCode:T.status,body:R});let L=xV(R,QtA,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}',
+];
 const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
-  /let ([A-Za-z$_][A-Za-z0-9$_]*)=await VX\(\);if\(!\1\|\|!\1\.orgId\)throw new LT\("Daemon not authenticated"\);let ([A-Za-z$_][A-Za-z0-9$_]*)=await AyH\(([A-Za-z$_][A-Za-z0-9$_]*)\);if\(!\2\.orgId\)throw new LT\("Client not affiliated with an organization"\);if\(SH\("Client credential verified"\),\2\.userId!==\1\.userId\|\|\2\.orgId!==\1\.orgId\)throw new LT\("Client identity does not match daemon identity"\);/g;
+  /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
+const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
+  /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
+const FACTORYD_SKIP_LOGIN_AUTH_REPLACEMENT =
+  'async function $1($2){if(/^fk/.test($2))return{userId:"f",orgId:"f"};let $3=await fetch(`${$4().apiBaseUrl}/api/cli/whoami`,{headers:{Authorization:`Bearer ${$2}`}});if(!$3.ok)throw new $7("API key verification failed");$3=$9(await $3.text(),$10,"whoami response");return{userId:$3.userId,email:"",orgId:$3.orgId}        }';
 const SKIP_LOGIN_V068_SOURCE = "process.env[LongerName.FACTORY_API_KEY]?.trim()";
 
 async function runCliDryRunWithFactorydPatch(binaryMarker) {
@@ -117,9 +129,8 @@ void test("factoryd-self-path regex patch preserves byte length", async () => {
         pattern: Buffer.from(""),
         replacement: Buffer.from(""),
         regexPattern: FACTORYD_PATH_REGEX,
-        regexReplacement: "function $1($2){return process.execPath}",
-        alreadyPatchedRegexPattern:
-          /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{return process\.execPath\}/g,
+        regexReplacement: '$1(1||$4.basename(process.execPath).includes(""))$5',
+        alreadyPatchedRegexPattern: FACTORYD_PATH_PATCHED_REGEX,
       },
     ],
   });
@@ -127,52 +138,61 @@ void test("factoryd-self-path regex patch preserves byte length", async () => {
   assert.equal(result.success, true);
   const patched = await readFile(outputPath, "utf8");
   assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
-  assert.match(patched, /function \$QH\(H\)\{return process\.execPath\}/);
-  assert.doesNotMatch(patched, /"droid-dev":"droid"/);
+  assert.match(
+    patched,
+    /function \$QH\(H\)\{if\(\(1\|\|path\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return H\?"droid-dev":"droid"\}/,
+  );
+  assert.match(patched, /"droid-dev":"droid"/);
+  assert.doesNotMatch(patched, /\.includes\("droid"\)/);
 });
 
-void test("factoryd core patches apply without an extra flag", async () => {
+void test("factoryd self-path patch still applies for non-skip-login binary patches", async () => {
   const { stdout } = await runCliDryRunWithFactorydPatch(
     `${FACTORYD_PATH_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\nisCustom:!0`,
   );
   assert.match(stdout, /\[\*\] Checking patch: factorydSelfPath/);
-  assert.match(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
+  assert.doesNotMatch(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
   assert.match(stdout, /\[\*\] Checking patch: isCustom/);
 });
 
-void test("factoryd skip-login auth patch preserves byte length", async () => {
+void test("factoryd skip-login auth patch preserves byte length across whoami helpers", async () => {
   const { patchDroid } = await import(new URL("../dist/index.mjs", import.meta.url));
-  const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
-  const inputPath = join(dir, "input.js");
-  const outputPath = join(dir, "output.js");
-  const source = `${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\n`;
+  for (const source of FACTORYD_SKIP_LOGIN_AUTH_VARIANTS) {
+    const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
+    const inputPath = join(dir, "input.js");
+    const outputPath = join(dir, "output.js");
+    const input = `${source}\n`;
 
-  await writeFile(inputPath, source, "utf8");
+    await writeFile(inputPath, input, "utf8");
 
-  const result = await patchDroid({
-    inputPath,
-    outputPath,
-    backup: false,
-    patches: [
-      {
-        name: "factorydSkipLoginAuth",
-        description: "test skip-login daemon auth replacement",
-        pattern: Buffer.from(""),
-        replacement: Buffer.from(""),
-        regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
-        regexReplacement:
-          'let $1=$3[0]=="f"&&$3[1]=="k"?{orgId:"f",userId:"f"}:await VX(),$2=$3[0]=="f"&&$3[1]=="k"?$1:await AyH($3);if(!$1||!$1.orgId)throw new LT("Daemon not authenticated");if(!$2.orgId||!($3[0]=="f"&&$3[1]=="k")&&($2.userId!==$1.userId||$2.orgId!==$1.orgId))throw new LT("Client identity does not match daemon identity");',
-        alreadyPatchedRegexPattern:
-          /[A-Za-z$_][A-Za-z0-9$_]*\[0\]=="f"&&[A-Za-z$_][A-Za-z0-9$_]*\[1\]=="k"\?\{orgId:"f",userId:"f"\}:await VX\(\),/g,
-      },
-    ],
-  });
+    const result = await patchDroid({
+      inputPath,
+      outputPath,
+      backup: false,
+      patches: [
+        {
+          name: "factorydSkipLoginAuth",
+          description: "test skip-login whoami helper replacement",
+          pattern: Buffer.from(""),
+          replacement: Buffer.from(""),
+          regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
+          regexReplacement: FACTORYD_SKIP_LOGIN_AUTH_REPLACEMENT,
+          alreadyPatchedRegexPattern: FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX,
+        },
+      ],
+    });
 
-  assert.equal(result.success, true);
-  const patched = await readFile(outputPath, "utf8");
-  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
-  assert.match(patched, /\[0\]=="f"&&L\[1\]=="k"\?\{orgId:"f",userId:"f"\}/);
-  assert.doesNotMatch(patched, /await VX\(\);if\(!D\|\|!D\.orgId\)/);
+    assert.equal(result.success, true, source);
+    const patched = await readFile(outputPath, "utf8");
+    assert.equal(Buffer.byteLength(patched), Buffer.byteLength(input), source);
+    assert.match(patched, new RegExp(FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX.source), source);
+    assert.match(
+      patched,
+      /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/,
+      source,
+    );
+    assert.doesNotMatch(patched, /method:"GET"/, source);
+  }
 });
 
 void test("skip-login dry-run also finds the factoryd auth bypass patch", async () => {
