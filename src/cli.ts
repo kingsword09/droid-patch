@@ -233,13 +233,13 @@ const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
 ];
 
 const FACTORYD_SELF_PATH_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
+  /(function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\()([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)(\)return process\.execPath;return \3\?"droid-dev":"droid"\})/g;
 const FACTORYD_SELF_PATH_PATCHED_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{return process\.execPath\}/g;
+  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
-  /let ([A-Za-z$_][A-Za-z0-9$_]*)=await VX\(\);if\(!\1\|\|!\1\.orgId\)throw new LT\("Daemon not authenticated"\);let ([A-Za-z$_][A-Za-z0-9$_]*)=await AyH\(([A-Za-z$_][A-Za-z0-9$_]*)\);if\(!\2\.orgId\)throw new LT\("Client not affiliated with an organization"\);if\(SH\("Client credential verified"\),\2\.userId!==\1\.userId\|\|\2\.orgId!==\1\.orgId\)throw new LT\("Client identity does not match daemon identity"\);/g;
+  /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
-  /[A-Za-z$_][A-Za-z0-9$_]*\[0\]=="f"&&[A-Za-z$_][A-Za-z0-9$_]*\[1\]=="k"\?\{orgId:"f",userId:"f"\}:await VX\(\),/g;
+  /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
 
 function createFactorydSelfPathPatch(): Patch {
   return {
@@ -249,7 +249,7 @@ function createFactorydSelfPathPatch(): Patch {
     pattern: Buffer.from(""),
     replacement: Buffer.from(""),
     regexPattern: FACTORYD_SELF_PATH_REGEX,
-    regexReplacement: "function $1($2){return process.execPath}",
+    regexReplacement: '$1(1||$4.basename(process.execPath).includes(""))$5',
     alreadyPatchedRegexPattern: FACTORYD_SELF_PATH_PATCHED_REGEX,
   };
 }
@@ -257,12 +257,13 @@ function createFactorydSelfPathPatch(): Patch {
 function createFactorydSkipLoginAuthPatch(): Patch {
   return {
     name: "factorydSkipLoginAuth",
-    description: "Allow mission/factoryd auth to reuse fk- API key sessions without a WorkOS login",
+    description:
+      "Allow mission/factoryd auth to reuse fk- API key sessions via the shared /api/cli/whoami helper",
     pattern: Buffer.from(""),
     replacement: Buffer.from(""),
     regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
     regexReplacement:
-      'let $1=$3[0]=="f"&&$3[1]=="k"?{orgId:"f",userId:"f"}:await VX(),$2=$3[0]=="f"&&$3[1]=="k"?$1:await AyH($3);if(!$1||!$1.orgId)throw new LT("Daemon not authenticated");if(!$2.orgId||!($3[0]=="f"&&$3[1]=="k")&&($2.userId!==$1.userId||$2.orgId!==$1.orgId))throw new LT("Client identity does not match daemon identity");',
+      'async function $1($2){if(/^fk/.test($2))return{userId:"f",orgId:"f"};let $3=await fetch(`${$4().apiBaseUrl}/api/cli/whoami`,{headers:{Authorization:`Bearer ${$2}`}});if(!$3.ok)throw new $7("API key verification failed");$3=$9(await $3.text(),$10,"whoami response");return{userId:$3.userId,email:"",orgId:$3.orgId}        }',
     alreadyPatchedRegexPattern: FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX,
   };
 }
@@ -287,8 +288,12 @@ function needsBinaryPatches(config: BinaryPatchConfig): boolean {
   );
 }
 
-function createMissionFactorydPatches(): Patch[] {
-  return [createFactorydSelfPathPatch(), createFactorydSkipLoginAuthPatch()];
+function createMissionFactorydPatches(config: Pick<BinaryPatchConfig, "skipLogin">): Patch[] {
+  const patches = [createFactorydSelfPathPatch()];
+  if (config.skipLogin) {
+    patches.push(createFactorydSkipLoginAuthPatch());
+  }
+  return patches;
 }
 
 function findDefaultDroidPath(): string {
@@ -622,7 +627,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     console.log(styleText("cyan", "═".repeat(60)));
     console.log();
 
-    const patches: Patch[] = createMissionFactorydPatches();
+    const patches: Patch[] = createMissionFactorydPatches({ skipLogin });
     if (isCustom) {
       patches.push({
         name: "isCustom",
@@ -1117,7 +1122,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       try {
         // Build patch list based on metadata
         const patches: Patch[] = needsBinaryPatches(meta.patches)
-          ? createMissionFactorydPatches()
+          ? createMissionFactorydPatches({ skipLogin: meta.patches.skipLogin })
           : [];
 
         if (meta.patches.isCustom) {
