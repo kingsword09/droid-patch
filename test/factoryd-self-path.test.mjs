@@ -11,10 +11,14 @@ const execFileAsync = promisify(execFile);
 const IS_WINDOWS = platform() === "win32";
 const FACTORYD_PATH_SOURCE =
   'function $QH(H){if(path.basename(process.execPath).includes("droid"))return process.execPath;return H?"droid-dev":"droid"}';
+const FACTORYD_PATH_ENV_OVERRIDE_SOURCE =
+  'function gsH(H){if(process.env.FACTORY_DROID_BINARY)return process.env.FACTORY_DROID_BINARY;if(path.basename(process.execPath).includes("droid"))return process.execPath;return H?"droid-dev":"droid"}';
+const FACTORYD_COMMAND_SOURCE =
+  'function awT(H){if(process.env.FACTORY_DROID_BINARY)return{execPath:process.env.FACTORY_DROID_BINARY,prefixArgs:[]};if(path.basename(process.execPath).includes("droid"))return{execPath:process.execPath,prefixArgs:[]};if(H&&process.argv[1])return{execPath:process.execPath,prefixArgs:[process.argv[1]]};return{execPath:H?"droid-dev":"droid",prefixArgs:[]}}';
 const FACTORYD_PATH_REGEX =
-  /(function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\()([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)(\)return process\.execPath;return \3\?"droid-dev":"droid"\})/g;
+  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)/g;
 const FACTORYD_PATH_PATCHED_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
+  /if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)/g;
 const FACTORYD_SKIP_LOGIN_AUTH_SOURCE =
   'async function LXT(H){let T=N8().apiBaseUrl,R=await fetch(`${T}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),A=await R.text();if(!R.ok)throw new LT("API key verification failed",{statusCode:R.status,body:A});let L=Nd(A,JL9,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}';
 const FACTORYD_SKIP_LOGIN_AUTH_VARIANTS = [
@@ -129,7 +133,7 @@ void test("factoryd-self-path regex patch preserves byte length", async () => {
         pattern: Buffer.from(""),
         replacement: Buffer.from(""),
         regexPattern: FACTORYD_PATH_REGEX,
-        regexReplacement: '$1(1||$4.basename(process.execPath).includes(""))$5',
+        regexReplacement: 'if((1||$1.basename(process.execPath).includes("")))',
         alreadyPatchedRegexPattern: FACTORYD_PATH_PATCHED_REGEX,
       },
     ],
@@ -146,6 +150,47 @@ void test("factoryd-self-path regex patch preserves byte length", async () => {
   assert.doesNotMatch(patched, /\.includes\("droid"\)/);
 });
 
+void test("factoryd-self-path regex patch also handles 0.98 command resolvers", async () => {
+  const { patchDroid } = await import(new URL("../dist/index.mjs", import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
+  const inputPath = join(dir, "input.js");
+  const outputPath = join(dir, "output.js");
+  const source = `${FACTORYD_PATH_ENV_OVERRIDE_SOURCE}\n${FACTORYD_COMMAND_SOURCE}\n`;
+
+  await writeFile(inputPath, source, "utf8");
+
+  const result = await patchDroid({
+    inputPath,
+    outputPath,
+    backup: false,
+    patches: [
+      {
+        name: "factorydSelfPath",
+        description: "test factoryd self-path replacement",
+        pattern: Buffer.from(""),
+        replacement: Buffer.from(""),
+        regexPattern: FACTORYD_PATH_REGEX,
+        regexReplacement: 'if((1||$1.basename(process.execPath).includes("")))',
+        alreadyPatchedRegexPattern: FACTORYD_PATH_PATCHED_REGEX,
+      },
+    ],
+  });
+
+  assert.equal(result.success, true);
+  const patched = await readFile(outputPath, "utf8");
+  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
+  assert.equal(patched.match(new RegExp(FACTORYD_PATH_PATCHED_REGEX.source, "g"))?.length, 2);
+  assert.doesNotMatch(patched, /\.includes\("droid"\)/);
+  assert.match(
+    patched,
+    /function gsH\(H\)\{if\(process\.env\.FACTORY_DROID_BINARY\)return process\.env\.FACTORY_DROID_BINARY;if\(\(1\|\|path\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return H\?"droid-dev":"droid"\}/,
+  );
+  assert.match(
+    patched,
+    /function awT\(H\)\{if\(process\.env\.FACTORY_DROID_BINARY\)return\{execPath:process\.env\.FACTORY_DROID_BINARY,prefixArgs:\[\]\};if\(\(1\|\|path\.basename\(process\.execPath\)\.includes\(""\)\)\)return\{execPath:process\.execPath,prefixArgs:\[\]\};if\(H&&process\.argv\[1\]\)return\{execPath:process\.execPath,prefixArgs:\[process\.argv\[1\]\]\};return\{execPath:H\?"droid-dev":"droid",prefixArgs:\[\]\}\}/,
+  );
+});
+
 void test("factoryd self-path patch still applies for non-skip-login binary patches", async () => {
   const { stdout } = await runCliDryRunWithFactorydPatch(
     `${FACTORYD_PATH_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\nisCustom:!0`,
@@ -153,6 +198,14 @@ void test("factoryd self-path patch still applies for non-skip-login binary patc
   assert.match(stdout, /\[\*\] Checking patch: factorydSelfPath/);
   assert.doesNotMatch(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
   assert.match(stdout, /\[\*\] Checking patch: isCustom/);
+});
+
+void test("factoryd self-path patch also applies for 0.98 command resolver binaries", async () => {
+  const { stdout } = await runCliDryRunWithFactorydPatch(
+    `${FACTORYD_PATH_ENV_OVERRIDE_SOURCE}\n${FACTORYD_COMMAND_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\nisCustom:!0`,
+  );
+  assert.match(stdout, /\[\*\] Checking patch: factorydSelfPath/);
+  assert.match(stdout, /factorydSelfPath: 2 occurrences will be patched/);
 });
 
 void test("factoryd skip-login auth patch preserves byte length across whoami helpers", async () => {

@@ -234,9 +234,9 @@ const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
 ];
 
 const FACTORYD_SELF_PATH_REGEX =
-  /(function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\()([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)(\)return process\.execPath;return \3\?"droid-dev":"droid"\})/g;
+  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)/g;
 const FACTORYD_SELF_PATH_PATCHED_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)return process\.execPath;return \2\?"droid-dev":"droid"\}/g;
+  /if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)/g;
 const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
   /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
@@ -250,7 +250,7 @@ function createFactorydSelfPathPatch(): Patch {
     pattern: Buffer.from(""),
     replacement: Buffer.from(""),
     regexPattern: FACTORYD_SELF_PATH_REGEX,
-    regexReplacement: '$1(1||$4.basename(process.execPath).includes(""))$5',
+    regexReplacement: 'if((1||$1.basename(process.execPath).includes("")))',
     alreadyPatchedRegexPattern: FACTORYD_SELF_PATH_PATCHED_REGEX,
   };
 }
