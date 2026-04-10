@@ -15,6 +15,7 @@ import {
   removeAliasesByFilter,
   type FilterFlag,
 } from "./alias.ts";
+import { isManagedAliasTarget, pathExistsWithLstat } from "./alias-utils.ts";
 import { createWebSearchUnifiedFiles } from "./websearch-patch.ts";
 import {
   saveAliasMetadata,
@@ -1364,16 +1365,12 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
           for (const dir of commonPathDirs) {
             const possiblePath = join(dir, meta.name);
-            if (existsSync(possiblePath)) {
+            if (pathExistsWithLstat(possiblePath)) {
               try {
                 const stats = await lstat(possiblePath);
                 if (stats.isSymbolicLink()) {
                   const target = await readlink(possiblePath);
-                  if (
-                    target.includes(".droid-patch/bins") ||
-                    target.includes(".droid-patch/proxy") ||
-                    target.includes(".droid-patch/statusline")
-                  ) {
+                  if (isManagedAliasTarget(target)) {
                     aliasPath = possiblePath;
                     if (verbose) {
                       console.log(styleText("gray", `  Found existing symlink: ${aliasPath}`));
@@ -1391,7 +1388,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         // Update symlink if we have a path
         if (aliasPath) {
           try {
-            if (existsSync(aliasPath)) {
+            if (pathExistsWithLstat(aliasPath)) {
               const currentTarget = await readlink(aliasPath);
               if (currentTarget !== execTargetPath) {
                 await unlink(aliasPath);

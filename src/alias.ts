@@ -13,7 +13,13 @@ import { join, basename, dirname, delimiter } from "node:path";
 import { homedir, platform } from "node:os";
 import { execSync } from "node:child_process";
 import { styleText } from "node:util";
-import { removeAliasMetadata, loadAliasMetadata, formatPatches } from "./metadata.ts";
+import { isManagedAliasTarget, pathExistsWithLstat, symlinkTargetExists } from "./alias-utils.ts";
+import {
+  clearAllMetadata,
+  removeAliasMetadata,
+  loadAliasMetadata,
+  formatPatches,
+} from "./metadata.ts";
 
 const IS_WINDOWS = platform() === "win32";
 
@@ -233,7 +239,7 @@ export async function createAlias(
       console.log(styleText("gray", `    Stored binary: ${binaryDest}`));
     }
 
-    if (existsSync(targetPath)) {
+    if (pathExistsWithLstat(targetPath)) {
       await unlink(targetPath);
       if (verbose) {
         console.log(styleText("gray", `    Removed existing: ${targetPath}`));
@@ -314,7 +320,7 @@ export async function createAlias(
 
   const symlinkPath = join(ALIASES_DIR, aliasName);
 
-  if (existsSync(symlinkPath)) {
+  if (pathExistsWithLstat(symlinkPath)) {
     await unlink(symlinkPath);
     if (verbose) {
       console.log(styleText("gray", `    Removed existing symlink`));
@@ -544,18 +550,12 @@ export async function removeAlias(aliasName: string): Promise<void> {
   if (!IS_WINDOWS) {
     for (const pathDir of COMMON_PATH_DIRS) {
       const pathSymlink = join(pathDir, aliasName);
-      if (existsSync(pathSymlink)) {
+      if (pathExistsWithLstat(pathSymlink)) {
         try {
           const stats = lstatSync(pathSymlink);
           if (stats.isSymbolicLink()) {
             const target = await readlink(pathSymlink);
-            // Support regular aliases, old websearch wrappers, and new proxy wrappers
-            if (
-              target.includes(".droid-patch/bins") ||
-              target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy") ||
-              target.includes(".droid-patch/statusline")
-            ) {
+            if (isManagedAliasTarget(target)) {
               await unlink(pathSymlink);
               console.log(styleText("green", `    Removed: ${pathSymlink}`));
               removed = true;
@@ -570,7 +570,7 @@ export async function removeAlias(aliasName: string): Promise<void> {
 
   // Check aliases directory
   const symlinkPath = join(ALIASES_DIR, aliasName);
-  if (existsSync(symlinkPath)) {
+  if (pathExistsWithLstat(symlinkPath)) {
     await unlink(symlinkPath);
     console.log(styleText("green", `    Removed: ${symlinkPath}`));
     removed = true;
@@ -676,6 +676,7 @@ export async function listAliases(): Promise<void> {
     target: string;
     location: string;
     immediate: boolean;
+    stale: boolean;
   }
 
   const aliases: AliasInfo[] = [];
@@ -700,6 +701,7 @@ export async function listAliases(): Promise<void> {
                 target,
                 location: binDir,
                 immediate: checkPathInclusion(),
+                stale: false,
               });
             } catch {
               aliases.push({
@@ -707,6 +709,7 @@ export async function listAliases(): Promise<void> {
                 target: fullPath,
                 location: binDir,
                 immediate: false,
+                stale: false,
               });
             }
           }
@@ -731,6 +734,7 @@ export async function listAliases(): Promise<void> {
                 target: fullPath,
                 location: proxyDir,
                 immediate: false,
+                stale: false,
               });
             }
           }
@@ -752,18 +756,13 @@ export async function listAliases(): Promise<void> {
             const stats = lstatSync(fullPath);
             if (stats.isSymbolicLink()) {
               const target = await readlink(fullPath);
-              // Support regular aliases, old websearch wrappers, and new proxy wrappers
-              if (
-                target.includes(".droid-patch/bins") ||
-                target.includes(".droid-patch/websearch") ||
-                target.includes(".droid-patch/proxy") ||
-                target.includes(".droid-patch/statusline")
-              ) {
+              if (isManagedAliasTarget(target)) {
                 aliases.push({
                   name: file,
                   target,
                   location: pathDir,
                   immediate: true,
+                  stale: !symlinkTargetExists(fullPath, target),
                 });
               }
             }
@@ -791,6 +790,7 @@ export async function listAliases(): Promise<void> {
                 target,
                 location: ALIASES_DIR,
                 immediate: false,
+                stale: !symlinkTargetExists(fullPath, target),
               });
             }
           }
@@ -811,11 +811,21 @@ export async function listAliases(): Promise<void> {
     console.log(styleText("white", `  Found ${aliases.length} alias(es):`));
     console.log();
     for (const alias of aliases) {
-      const status = alias.immediate
-        ? styleText("green", "✓ immediate")
-        : styleText("yellow", "requires source");
+      const status = alias.stale
+        ? styleText("red", "stale broken symlink")
+        : alias.immediate
+          ? styleText("green", "✓ immediate")
+          : styleText("yellow", "requires source");
       console.log(styleText("green", `  • ${styleText(["cyan", "bold"], alias.name)} [${status}]`));
       console.log(styleText("gray", `    → ${alias.target}`));
+      if (alias.stale) {
+        console.log(
+          styleText(
+            "yellow",
+            `    Target missing; run \`npx droid-patch remove ${alias.name}\` or \`clear\` to clean it up.`,
+          ),
+        );
+      }
 
       // Load and display metadata
       const meta = await loadAliasMetadata(alias.name);
@@ -949,7 +959,7 @@ export async function createAliasForWrapper(
       console.log(styleText("gray", `    Wrapper: ${wrapperPath}`));
     }
 
-    if (existsSync(targetPath)) {
+    if (pathExistsWithLstat(targetPath)) {
       await unlink(targetPath);
       if (verbose) {
         console.log(styleText("gray", `    Removed existing: ${targetPath}`));
@@ -984,7 +994,7 @@ export async function createAliasForWrapper(
 
   const symlinkPath = join(ALIASES_DIR, aliasName);
 
-  if (existsSync(symlinkPath)) {
+  if (pathExistsWithLstat(symlinkPath)) {
     await unlink(symlinkPath);
     if (verbose) {
       console.log(styleText("gray", `    Removed existing symlink`));
@@ -1276,12 +1286,7 @@ export async function removeAliasesByFilter(filter: RemoveFilterOptions): Promis
           const stats = lstatSync(fullPath);
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
-            if (
-              target.includes(".droid-patch/bins") ||
-              target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy") ||
-              target.includes(".droid-patch/statusline")
-            ) {
+            if (isManagedAliasTarget(target)) {
               aliasNames.add(file);
             }
           }
@@ -1418,12 +1423,7 @@ export async function clearAllAliases(): Promise<void> {
           const stats = lstatSync(fullPath);
           if (stats.isSymbolicLink()) {
             const target = await readlink(fullPath);
-            if (
-              target.includes(".droid-patch/bins") ||
-              target.includes(".droid-patch/websearch") ||
-              target.includes(".droid-patch/proxy") ||
-              target.includes(".droid-patch/statusline")
-            ) {
+            if (isManagedAliasTarget(target)) {
               aliasNames.add(file);
             }
           }
@@ -1541,6 +1541,11 @@ export async function clearAllAliases(): Promise<void> {
     }
   } catch {
     // Ignore
+  }
+
+  const removedMetadataCount = await clearAllMetadata();
+  if (removedMetadataCount > 0) {
+    console.log(styleText("green", `    Removed metadata files: ${removedMetadataCount}`));
   }
 
   // Clean up metadata file

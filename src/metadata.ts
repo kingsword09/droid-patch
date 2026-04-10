@@ -117,6 +117,31 @@ export async function listAllMetadata(): Promise<AliasMetadata[]> {
 }
 
 /**
+ * Remove all alias metadata files
+ */
+export async function clearAllMetadata(): Promise<number> {
+  if (!existsSync(META_DIR)) {
+    return 0;
+  }
+
+  const files = await readdir(META_DIR);
+  let removedCount = 0;
+
+  for (const file of files) {
+    if (!file.endsWith(".json")) continue;
+
+    try {
+      await unlink(join(META_DIR, file));
+      removedCount++;
+    } catch {
+      // Ignore individual cleanup failures and continue.
+    }
+  }
+
+  return removedCount;
+}
+
+/**
  * Remove alias metadata
  */
 export async function removeAliasMetadata(aliasName: string): Promise<boolean> {
