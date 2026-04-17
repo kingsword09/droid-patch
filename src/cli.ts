@@ -233,6 +233,99 @@ const SKIP_LOGIN_PATCH_RULES: VersionedPatchRule[] = [
   },
 ];
 
+const INLINE_MODEL_PICKER_CALLBACK_REGEX =
+  /([A-Za-z$_][A-Za-z0-9$_]*)=[A-Za-z$_][A-Za-z0-9$_]*\.useCallback\(\(\)=>\{if\(([A-Za-z$_][A-Za-z0-9$_]*)\.length<=1\)return;let ([A-Za-z$_][A-Za-z0-9$_]*)=[A-Za-z$_][A-Za-z0-9$_]*\(\)\.getModelPolicy\(\);if\(!\2\.some\(\(([A-Za-z$_][A-Za-z0-9$_]*)\)=>[A-Za-z$_][A-Za-z0-9$_]*\(\4,\3\)\.allowed\)\)return;([A-Za-z$_][A-Za-z0-9$_]*)\(\(([A-Za-z$_][A-Za-z0-9$_]*)\)=>!\6\)\},\[\2\]\)/g;
+const INLINE_MODEL_PICKER_INLINE_SETTER_REGEX =
+  /availableModels:([A-Za-z$_][A-Za-z0-9$_]*),currentModel:[^,]+,onSelect:[A-Za-z$_][A-Za-z0-9$_]*,onCancel:\(\)=>([A-Za-z$_][A-Za-z0-9$_]*)\(!1\)/g;
+const INLINE_MODEL_PICKER_FULL_SELECTOR_REGEX =
+  /onCancel:\(\)=>\{([A-Za-z$_][A-Za-z0-9$_]*)\(!1\),([A-Za-z$_][A-Za-z0-9$_]*)\(!1\),([A-Za-z$_][A-Za-z0-9$_]*)\.current\?\.closeSuggestions\?\.\(\),\3\.current\?\.setInput\?\.\(""\)\}/g;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createInlineModelPickerSemanticPatch(binaryText: string): Patch | null {
+  const inlinePickerContexts = [...binaryText.matchAll(INLINE_MODEL_PICKER_INLINE_SETTER_REGEX)].map(
+    (match) => ({
+      modelsVar: match[1],
+      inlineSetter: match[2],
+    }),
+  );
+
+  if (inlinePickerContexts.length === 0) {
+    return null;
+  }
+
+  const callbackMatches = [...binaryText.matchAll(INLINE_MODEL_PICKER_CALLBACK_REGEX)].filter(
+    (match) =>
+      inlinePickerContexts.some(
+        (context) => context.modelsVar === match[2] && context.inlineSetter === match[5],
+      ),
+  );
+
+  if (callbackMatches.length !== 1) {
+    return null;
+  }
+
+  const callbackMatch = callbackMatches[0];
+  const inlineSetter = callbackMatch[5];
+  const fullSelectorSetters = [
+    ...new Set(
+      [...binaryText.matchAll(INLINE_MODEL_PICKER_FULL_SELECTOR_REGEX)]
+        .map((match) => match[1])
+        .filter((setter) => setter !== inlineSetter),
+    ),
+  ];
+
+  if (fullSelectorSetters.length !== 1) {
+    return null;
+  }
+
+  const fullSelectorSetter = fullSelectorSetters[0];
+  if (inlineSetter.length !== fullSelectorSetter.length) {
+    return null;
+  }
+
+  const callbackSource = callbackMatch[0];
+  const toggleParam = callbackMatch[6];
+  const inlineToggle = `${inlineSetter}((${toggleParam})=>!${toggleParam})`;
+  const fullSelectorToggle = `${fullSelectorSetter}((${toggleParam})=>!${toggleParam})`;
+
+  if (!callbackSource.includes(inlineToggle)) {
+    return null;
+  }
+
+  const callbackReplacement = callbackSource.replace(inlineToggle, fullSelectorToggle);
+  if (callbackReplacement === callbackSource) {
+    return null;
+  }
+
+  return {
+    name: "inlineModelPickerUsesFullSelector",
+    description:
+      "Change ctrl+N callback from inline built-in picker to full model selector overlay",
+    pattern: Buffer.from(""),
+    replacement: Buffer.from(""),
+    regexPattern: new RegExp(escapeRegExp(callbackSource), "g"),
+    regexReplacement: () => callbackReplacement,
+    alreadyPatchedRegexPattern: new RegExp(escapeRegExp(callbackReplacement), "g"),
+    suppressCheckUnlessFound: true,
+  };
+}
+
+function resolveInlineModelPickerPatch(droidPath: string | undefined): Patch | null {
+  if (!droidPath || !existsSync(droidPath)) {
+    return null;
+  }
+
+  try {
+    const binaryText = readFileSync(droidPath, "utf-8");
+    return createInlineModelPickerSemanticPatch(binaryText);
+  } catch {
+    return null;
+  }
+}
+
 const FACTORYD_SELF_PATH_REGEX =
   /if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)/g;
 const FACTORYD_SELF_PATH_PATCHED_REGEX =
@@ -295,6 +388,20 @@ function createMissionFactorydPatches(config: Pick<BinaryPatchConfig, "skipLogin
     patches.push(createFactorydSkipLoginAuthPatch());
   }
   return patches;
+}
+
+function appendIsCustomPatches(patches: Patch[], droidPath: string | undefined): void {
+  patches.push({
+    name: "isCustom",
+    description: "Change isCustom:!0 to isCustom:!1",
+    pattern: Buffer.from("isCustom:!0"),
+    replacement: Buffer.from("isCustom:!1"),
+  });
+
+  const inlineModelPickerPatch = resolveInlineModelPickerPatch(droidPath);
+  if (inlineModelPickerPatch) {
+    patches.push(inlineModelPickerPatch);
+  }
 }
 
 function findDefaultDroidPath(): string {
@@ -630,12 +737,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     const patches: Patch[] = createMissionFactorydPatches({ skipLogin });
     if (isCustom) {
-      patches.push({
-        name: "isCustom",
-        description: "Change isCustom:!0 to isCustom:!1",
-        pattern: Buffer.from("isCustom:!0"),
-        replacement: Buffer.from("isCustom:!1"),
-      });
+      appendIsCustomPatches(patches, path);
     }
 
     // Add skip-login patch: replace process.env.FACTORY_API_KEY with a fixed fake key
@@ -1127,12 +1229,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
           : [];
 
         if (meta.patches.isCustom) {
-          patches.push({
-            name: "isCustom",
-            description: "Change isCustom:!0 to isCustom:!1",
-            pattern: Buffer.from("isCustom:!0"),
-            replacement: Buffer.from("isCustom:!1"),
-          });
+          appendIsCustomPatches(patches, newBinaryPath);
         }
 
         if (meta.patches.skipLogin) {
