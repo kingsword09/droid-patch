@@ -245,12 +245,12 @@ function escapeRegExp(text: string): string {
 }
 
 function createInlineModelPickerSemanticPatch(binaryText: string): Patch | null {
-  const inlinePickerContexts = [...binaryText.matchAll(INLINE_MODEL_PICKER_INLINE_SETTER_REGEX)].map(
-    (match) => ({
-      modelsVar: match[1],
-      inlineSetter: match[2],
-    }),
-  );
+  const inlinePickerContexts = [
+    ...binaryText.matchAll(INLINE_MODEL_PICKER_INLINE_SETTER_REGEX),
+  ].map((match) => ({
+    modelsVar: match[1],
+    inlineSetter: match[2],
+  }));
 
   if (inlinePickerContexts.length === 0) {
     return null;
