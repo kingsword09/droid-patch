@@ -606,6 +606,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         forwardTarget,
         standalone,
         websearchProxy, // useNativeProvider flag
+        skipLogin,
       );
       execTargetPath = wrapperScript;
 
@@ -1005,6 +1006,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             websearchProxy ? undefined : websearchTarget, // websearchProxy reads from settings.json at runtime
             standalone,
             websearchProxy, // useNativeProvider flag
+            skipLogin,
           );
           execTargetPath = wrapperScript;
 
@@ -1424,6 +1426,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             forwardTarget,
             meta.patches.standalone || false,
             meta.patches.websearchProxy || false,
+            meta.patches.skipLogin || false,
           );
           execTargetPath = wrapperScript;
           if (verbose) {

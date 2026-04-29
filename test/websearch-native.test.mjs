@@ -38,6 +38,37 @@ printf 'noop\\n'
   return binaryPath;
 }
 
+async function createFakeMissionCapableDroidBinary(dir) {
+  const binaryPath = join(dir, IS_WINDOWS ? "droid.cmd" : "droid");
+  const script = IS_WINDOWS
+    ? `@echo off
+if "%~1"=="--version" (
+  echo 0.111.0
+  exit /b 0
+)
+rem if(a.basename(process.execPath).includes("droid"))
+rem async function a(b){let c=d().apiBaseUrl,e=await fetch(\`\${c}/api/cli/whoami\`,{method:"GET",headers:{Authorization:\`Bearer \${b}\`}}),f=await e.text();if(!e.ok)throw new G("API key verification failed",{statusCode:e.status,body:f});let h=I(f,j,"whoami response");return{userId:h.userId,email:"",orgId:h.orgId}}
+rem process.env[a.FACTORY_API_KEY]?.trim()
+echo noop
+`
+    : `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '0.111.0\\n'
+  exit 0
+fi
+# if(a.basename(process.execPath).includes("droid"))
+# async function a(b){let c=d().apiBaseUrl,e=await fetch(\`\${c}/api/cli/whoami\`,{method:"GET",headers:{Authorization:\`Bearer \${b}\`}}),f=await e.text();if(!e.ok)throw new G("API key verification failed",{statusCode:e.status,body:f});let h=I(f,j,"whoami response");return{userId:h.userId,email:"",orgId:h.orgId}}
+# process.env[a.FACTORY_API_KEY]?.trim()
+printf 'noop\\n'
+`;
+
+  await writeFile(binaryPath, script, "utf8");
+  if (!IS_WINDOWS) {
+    await chmod(binaryPath, 0o755);
+  }
+  return binaryPath;
+}
+
 async function writeFactorySettings(homeDir, settings) {
   const factoryDir = join(homeDir, ".factory");
   await mkdir(factoryDir, { recursive: true });
@@ -406,6 +437,35 @@ void test("native websearch proxy mocks mission billing endpoints for patched fk
     } finally {
       await stopChild(child);
     }
+  } finally {
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy wrapper exports skip-login marker for patched aliases", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [],
+    });
+
+    const droidPath = await createFakeMissionCapableDroidBinary(homeDir);
+    await execFileAsync(
+      process.execPath,
+      [CLI_PATH, "--skip-login", "--websearch-proxy", "-p", droidPath, "droid-native-skip-login"],
+      {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, HOME: homeDir, PATH: process.env.PATH },
+      },
+    );
+
+    const wrapperPath = join(homeDir, ".droid-patch", "proxy", "droid-native-skip-login");
+    const proxyPath = join(homeDir, ".droid-patch", "proxy", "droid-native-skip-login-proxy.js");
+    const wrapperText = await readFile(wrapperPath, "utf8");
+    const proxyText = await readFile(proxyPath, "utf8");
+    assert.match(wrapperText, /DROID_SKIP_LOGIN=1/);
+    assert.match(proxyText, /const SKIP_LOGIN_PATCHED = process\.env\.DROID_SKIP_LOGIN === '1';/);
   } finally {
     await rm(homeDir, { recursive: true, force: true });
   }

@@ -32,6 +32,7 @@ const SEARCH_ROUTE_ALIASES = new Set(['/api/tools/web-search', '/api/tools/exa/s
 const SUPPORTED_PROVIDERS = new Set(['anthropic', 'openai']);
 const MOCK_USER_ID = 'f';
 const MOCK_ORG_ID = 'f';
+const SKIP_LOGIN_PATCHED = process.env.DROID_SKIP_LOGIN === '1';
 
 function log(...args) { if (DEBUG) console.error('[websearch]', ...args); }
 
@@ -501,7 +502,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + req.headers.host);
   const pathname = url.pathname;
   const bearerToken = getBearerToken(req.headers);
-  const isPatchedAuthRequest = isPatchedFactoryKey(bearerToken);
+  const isPatchedAuthRequest = SKIP_LOGIN_PATCHED || isPatchedFactoryKey(bearerToken);
 
   if (pathname === '/health') {
     writeJson(res, 200, { status: 'ok', mode: 'native-provider' });
