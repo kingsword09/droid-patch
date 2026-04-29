@@ -121,6 +121,16 @@ async function requestSearch(port, payload, pathname = "/api/tools/web-search") 
   });
 }
 
+async function requestJson(port, pathname, options = {}) {
+  return fetch(`http://127.0.0.1:${port}${pathname}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+}
+
 async function startOpenAIStubServer(mode = "annotations") {
   let attempts = 0;
   const server = createServer((req, res) => {
@@ -335,6 +345,68 @@ void test("native websearch proxy retries transient OpenAI upstream failures", a
     }
   } finally {
     await upstream.close();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy mocks mission billing endpoints for patched fk auth", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [],
+    });
+
+    const droidPath = await createFakeDroidBinary(homeDir);
+    await createNativeAlias(homeDir, droidPath, "droid-native-billing");
+
+    const { child, port } = await startNativeProxy(homeDir, "droid-native-billing");
+    try {
+      const authHeaders = {
+        Authorization: "Bearer fk-droid-patch-skip-00000",
+      };
+
+      const whoamiResponse = await requestJson(port, "/api/cli/whoami", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      assert.equal(whoamiResponse.status, 200);
+      assert.deepEqual(await whoamiResponse.json(), { userId: "f", orgId: "f" });
+
+      const billingResponse = await requestJson(port, "/api/billing/limits", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      assert.equal(billingResponse.status, 200);
+      const billingPayload = await billingResponse.json();
+      assert.equal(billingPayload.usesTokenRateLimitsBilling, false);
+      assert.equal(billingPayload.overagePreference, null);
+
+      const updateResponse = await requestJson(
+        port,
+        "/api/organization/subscription/set-overage-preference",
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ overagePreference: "droidCore" }),
+        },
+      );
+      assert.equal(updateResponse.status, 200);
+      assert.deepEqual(await updateResponse.json(), {
+        ok: true,
+        overagePreference: "droidCore",
+      });
+
+      const billingAfterUpdate = await requestJson(port, "/api/billing/limits", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      const updatedPayload = await billingAfterUpdate.json();
+      assert.equal(updatedPayload.overagePreference, "droidCore");
+    } finally {
+      await stopChild(child);
+    }
+  } finally {
     await rm(homeDir, { recursive: true, force: true });
   }
 });
