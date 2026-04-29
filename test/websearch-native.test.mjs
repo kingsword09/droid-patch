@@ -38,6 +38,37 @@ printf 'noop\\n'
   return binaryPath;
 }
 
+async function createFakeMissionCapableDroidBinary(dir) {
+  const binaryPath = join(dir, IS_WINDOWS ? "droid.cmd" : "droid");
+  const script = IS_WINDOWS
+    ? `@echo off
+if "%~1"=="--version" (
+  echo 0.111.0
+  exit /b 0
+)
+rem if(a.basename(process.execPath).includes("droid"))
+rem async function a(b){let c=d().apiBaseUrl,e=await fetch(\`\${c}/api/cli/whoami\`,{method:"GET",headers:{Authorization:\`Bearer \${b}\`}}),f=await e.text();if(!e.ok)throw new G("API key verification failed",{statusCode:e.status,body:f});let h=I(f,j,"whoami response");return{userId:h.userId,email:"",orgId:h.orgId}}
+rem process.env[a.FACTORY_API_KEY]?.trim()
+echo noop
+`
+    : `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '0.111.0\\n'
+  exit 0
+fi
+# if(a.basename(process.execPath).includes("droid"))
+# async function a(b){let c=d().apiBaseUrl,e=await fetch(\`\${c}/api/cli/whoami\`,{method:"GET",headers:{Authorization:\`Bearer \${b}\`}}),f=await e.text();if(!e.ok)throw new G("API key verification failed",{statusCode:e.status,body:f});let h=I(f,j,"whoami response");return{userId:h.userId,email:"",orgId:h.orgId}}
+# process.env[a.FACTORY_API_KEY]?.trim()
+printf 'noop\\n'
+`;
+
+  await writeFile(binaryPath, script, "utf8");
+  if (!IS_WINDOWS) {
+    await chmod(binaryPath, 0o755);
+  }
+  return binaryPath;
+}
+
 async function writeFactorySettings(homeDir, settings) {
   const factoryDir = join(homeDir, ".factory");
   await mkdir(factoryDir, { recursive: true });
@@ -118,6 +149,16 @@ async function requestSearch(port, payload, pathname = "/api/tools/web-search") 
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+async function requestJson(port, pathname, options = {}) {
+  return fetch(`http://127.0.0.1:${port}${pathname}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 }
 
@@ -335,6 +376,97 @@ void test("native websearch proxy retries transient OpenAI upstream failures", a
     }
   } finally {
     await upstream.close();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy mocks mission billing endpoints for patched fk auth", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [],
+    });
+
+    const droidPath = await createFakeDroidBinary(homeDir);
+    await createNativeAlias(homeDir, droidPath, "droid-native-billing");
+
+    const { child, port } = await startNativeProxy(homeDir, "droid-native-billing");
+    try {
+      const authHeaders = {
+        Authorization: "Bearer fk-droid-patch-skip-00000",
+      };
+
+      const whoamiResponse = await requestJson(port, "/api/cli/whoami", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      assert.equal(whoamiResponse.status, 200);
+      assert.deepEqual(await whoamiResponse.json(), { userId: "f", orgId: "f" });
+
+      const billingResponse = await requestJson(port, "/api/billing/limits", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      assert.equal(billingResponse.status, 200);
+      const billingPayload = await billingResponse.json();
+      assert.equal(billingPayload.usesTokenRateLimitsBilling, false);
+      assert.equal(billingPayload.overagePreference, null);
+
+      const updateResponse = await requestJson(
+        port,
+        "/api/organization/subscription/set-overage-preference",
+        {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ overagePreference: "droidCore" }),
+        },
+      );
+      assert.equal(updateResponse.status, 200);
+      assert.deepEqual(await updateResponse.json(), {
+        ok: true,
+        overagePreference: "droidCore",
+      });
+
+      const billingAfterUpdate = await requestJson(port, "/api/billing/limits", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      const updatedPayload = await billingAfterUpdate.json();
+      assert.equal(updatedPayload.overagePreference, "droidCore");
+    } finally {
+      await stopChild(child);
+    }
+  } finally {
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy wrapper exports skip-login marker for patched aliases", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [],
+    });
+
+    const droidPath = await createFakeMissionCapableDroidBinary(homeDir);
+    await execFileAsync(
+      process.execPath,
+      [CLI_PATH, "--skip-login", "--websearch-proxy", "-p", droidPath, "droid-native-skip-login"],
+      {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, HOME: homeDir, PATH: process.env.PATH },
+      },
+    );
+
+    const wrapperPath = join(homeDir, ".droid-patch", "proxy", "droid-native-skip-login");
+    const proxyPath = join(homeDir, ".droid-patch", "proxy", "droid-native-skip-login-proxy.js");
+    const wrapperText = await readFile(wrapperPath, "utf8");
+    const proxyText = await readFile(proxyPath, "utf8");
+    assert.match(wrapperText, /DROID_SKIP_LOGIN=1/);
+    assert.match(proxyText, /const SKIP_LOGIN_PATCHED = process\.env\.DROID_SKIP_LOGIN === '1';/);
+  } finally {
     await rm(homeDir, { recursive: true, force: true });
   }
 });

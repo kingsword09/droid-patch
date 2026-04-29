@@ -30,6 +30,9 @@ const PORT = parseInt(process.env.SEARCH_PROXY_PORT || '0');
 const FACTORY_API = '${factoryApiUrl}';
 const SEARCH_ROUTE_ALIASES = new Set(['/api/tools/web-search', '/api/tools/exa/search']);
 const SUPPORTED_PROVIDERS = new Set(['anthropic', 'openai']);
+const MOCK_USER_ID = 'f';
+const MOCK_ORG_ID = 'f';
+const SKIP_LOGIN_PATCHED = process.env.DROID_SKIP_LOGIN === '1';
 
 function log(...args) { if (DEBUG) console.error('[websearch]', ...args); }
 
@@ -37,9 +40,42 @@ function isSearchRequest(url, method) {
   return method === 'POST' && SEARCH_ROUTE_ALIASES.has(url.pathname);
 }
 
+function getBearerToken(headers) {
+  const auth = headers && headers.authorization;
+  if (typeof auth !== 'string') return null;
+  const match = auth.match(/^Bearer\\s+(.+)$/i);
+  return match ? match[1] : null;
+}
+
+function isPatchedFactoryKey(token) {
+  return typeof token === 'string' && /^fk/i.test(token);
+}
+
+function createMockBillingLimits(overagePreference) {
+  return {
+    usesTokenRateLimitsBilling: false,
+    overagePreference: overagePreference || null,
+    extraUsageAllowed: false,
+    extraUsageBalanceCents: 0,
+    limits: {
+      standard: {
+        fiveHour: { usedPercent: 0 },
+        weekly: { usedPercent: 0 },
+        monthly: { usedPercent: 0 },
+      },
+    },
+  };
+}
+
+function writeJson(res, statusCode, payload) {
+  res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
 let cachedSettings = null;
 let settingsLastModified = 0;
 let lastObservedProvider = null;
+let mockedOveragePreference = null;
 
 function getFactorySettings() {
   const settingsPath = path.join(os.homedir(), '.factory', 'settings.json');
@@ -464,10 +500,12 @@ async function search(query, numResults) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + req.headers.host);
+  const pathname = url.pathname;
+  const bearerToken = getBearerToken(req.headers);
+  const isPatchedAuthRequest = SKIP_LOGIN_PATCHED || isPatchedFactoryKey(bearerToken);
 
-  if (url.pathname === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', mode: 'native-provider' }));
+  if (pathname === '/health') {
+    writeJson(res, 200, { status: 'ok', mode: 'native-provider' });
     return;
   }
 
@@ -496,24 +534,58 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Patched fk- sessions do not have a real Factory organization. Mission mode in
+  // newer Droid versions probes billing/overage endpoints before launching worker
+  // flows; returning a local synthetic response keeps the probe from failing.
+  if (isPatchedAuthRequest) {
+    if (pathname === '/api/cli/whoami') {
+      writeJson(res, 200, { userId: MOCK_USER_ID, orgId: MOCK_ORG_ID });
+      return;
+    }
+
+    if (pathname === '/api/billing/limits' && req.method === 'GET') {
+      writeJson(res, 200, createMockBillingLimits(mockedOveragePreference));
+      return;
+    }
+
+    if (pathname === '/api/organization/subscription/set-overage-preference' && req.method === 'POST') {
+      let body = '';
+      req.on('data', function(c) { body += c; });
+      req.on('end', function() {
+        let requestedPreference = null;
+        if (body) {
+          try {
+            const parsed = JSON.parse(body);
+            if (typeof parsed.overagePreference === 'string') {
+              requestedPreference = parsed.overagePreference;
+            }
+          } catch {}
+        }
+
+        mockedOveragePreference = requestedPreference;
+        writeJson(res, 200, {
+          ok: true,
+          overagePreference: mockedOveragePreference,
+        });
+      });
+      return;
+    }
+  }
+
   // Standalone mode: mock non-LLM APIs
   if (process.env.STANDALONE_MODE === '1') {
-    const pathname = url.pathname;
     const isCoreLLMApi = pathname.startsWith('/api/llm/a/') || pathname.startsWith('/api/llm/o/');
 
     if (!isCoreLLMApi) {
       if (pathname === '/api/sessions/create') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10) }));
+        writeJson(res, 200, { id: 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10) });
         return;
       }
       if (pathname === '/api/cli/whoami') {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized' }));
+        writeJson(res, 401, { error: 'Unauthorized' });
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({}));
+      writeJson(res, 200, {});
       return;
     }
   }
