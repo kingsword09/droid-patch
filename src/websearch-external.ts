@@ -1,3 +1,10 @@
+import {
+  generateFactoryCompatPrelude,
+  generateFactoryCompatRequestGuard,
+  generateFactoryCompatRoutes,
+  generateFactoryCompatState,
+} from "./runtime-proxy-factory-compat.ts";
+
 /**
  * WebSearch External Providers Mode (--websearch)
  *
@@ -18,12 +25,15 @@ const DEBUG = process.env.DROID_SEARCH_DEBUG === '1';
 const PORT = parseInt(process.env.SEARCH_PROXY_PORT || '0');
 const FACTORY_API = 'https://api.factory.ai';
 const SEARCH_ROUTE_ALIASES = new Set(['/api/tools/web-search', '/api/tools/exa/search']);
+${generateFactoryCompatPrelude().trim()}
 
 function log() { if (DEBUG) console.error.apply(console, ['[websearch]'].concat(Array.from(arguments))); }
 
 function isSearchRequest(url, method) {
   return method === 'POST' && SEARCH_ROUTE_ALIASES.has(url.pathname);
 }
+
+${generateFactoryCompatState().trim()}
 
 // === External Search Providers ===
 
@@ -190,10 +200,11 @@ async function search(query, numResults) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + req.headers.host);
+  const pathname = url.pathname;
+${generateFactoryCompatRequestGuard().trimEnd()}
 
-  if (url.pathname === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', mode: 'external-providers' }));
+  if (pathname === '/health') {
+    writeJson(res, 200, { status: 'ok', mode: 'external-providers' });
     return;
   }
 
@@ -215,6 +226,8 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+
+${generateFactoryCompatRoutes().trimEnd()}
 
   // Proxy other requests
   const proxyUrl = new URL(FACTORY_API + url.pathname + url.search);
