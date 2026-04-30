@@ -413,10 +413,14 @@ void test("native websearch proxy mocks mission billing endpoints for patched fk
       assert.equal(billingPayload.usesTokenRateLimitsBilling, false);
       assert.equal(billingPayload.overagePreference, null);
 
-      const managedSettingsResponse = await requestJson(port, "/api/organization/managed-settings", {
-        method: "GET",
-        headers: authHeaders,
-      });
+      const managedSettingsResponse = await requestJson(
+        port,
+        "/api/organization/managed-settings",
+        {
+          method: "GET",
+          headers: authHeaders,
+        },
+      );
       assert.equal(managedSettingsResponse.status, 200);
       assert.deepEqual(await managedSettingsResponse.json(), {
         success: true,
@@ -488,7 +492,10 @@ void test("native websearch proxy wrapper exports skip-login marker for patched 
     assert.match(wrapperText, /DROID_SKIP_LOGIN=1/);
     assert.match(wrapperText, /DROID_FACTORY_COMPAT=1/);
     assert.match(proxyText, /const SKIP_LOGIN_PATCHED = process\.env\.DROID_SKIP_LOGIN === '1';/);
-    assert.match(proxyText, /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/);
+    assert.match(
+      proxyText,
+      /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/,
+    );
   } finally {
     await rm(homeDir, { recursive: true, force: true });
   }
@@ -502,10 +509,14 @@ void test("is-custom aliases also opt into Factory compat wrapper without explic
     const binDir = join(homeDir, "bin");
     await mkdir(binDir, { recursive: true });
 
-    await execFileAsync(process.execPath, [CLI_PATH, "--is-custom", "-p", droidPath, "droid-custom"], {
-      cwd: PROJECT_ROOT,
-      env: { ...process.env, HOME: homeDir, PATH: `${binDir}:${process.env.PATH}` },
-    });
+    await execFileAsync(
+      process.execPath,
+      [CLI_PATH, "--is-custom", "-p", droidPath, "droid-custom"],
+      {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, HOME: homeDir, PATH: `${binDir}:${process.env.PATH}` },
+      },
+    );
 
     const wrapperPath = join(homeDir, ".droid-patch", "proxy", "droid-custom");
     const proxyPath = join(homeDir, ".droid-patch", "proxy", "droid-custom-proxy.js");
@@ -514,7 +525,10 @@ void test("is-custom aliases also opt into Factory compat wrapper without explic
 
     assert.match(wrapperText, /DROID_FACTORY_COMPAT=1/);
     assert.doesNotMatch(wrapperText, /DROID_SKIP_LOGIN=1/);
-    assert.match(proxyText, /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/);
+    assert.match(
+      proxyText,
+      /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/,
+    );
   } finally {
     await rm(homeDir, { recursive: true, force: true });
   }
@@ -649,7 +663,10 @@ void test("websearch-proxy update path regenerates native wrappers", async () =>
 
 void test("is-custom and skip-login aliases opt into runtime Factory compat proxy", async () => {
   const src = await readFile(new URL("../src/cli.ts", import.meta.url), "utf8");
-  assert.match(src, /function requiresRuntimeProxy\(config: Pick<BinaryPatchConfig, "isCustom" \| "skipLogin">\)/);
+  assert.match(
+    src,
+    /function requiresRuntimeProxy\(config: Pick<BinaryPatchConfig, "isCustom" \| "skipLogin">\)/,
+  );
   assert.match(src, /requiresRuntimeProxy\(\{ isCustom, skipLogin \}\)/);
   assert.match(
     src,
@@ -659,7 +676,10 @@ void test("is-custom and skip-login aliases opt into runtime Factory compat prox
 
 void test("factory compat proxy logic is centralized in a dedicated module", async () => {
   const nativeSrc = await readFile(new URL("../src/websearch-native.ts", import.meta.url), "utf8");
-  const externalSrc = await readFile(new URL("../src/websearch-external.ts", import.meta.url), "utf8");
+  const externalSrc = await readFile(
+    new URL("../src/websearch-external.ts", import.meta.url),
+    "utf8",
+  );
   const compatSrc = await readFile(
     new URL("../src/runtime-proxy-factory-compat.ts", import.meta.url),
     "utf8",

@@ -1053,7 +1053,9 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             console.log(styleText("cyan", "WebSearch enabled (external providers mode)"));
             console.log(styleText("white", `  Forward target: ${websearchTarget}`));
           } else {
-            console.log(styleText("cyan", "Runtime proxy enabled for custom/skip-login session support"));
+            console.log(
+              styleText("cyan", "Runtime proxy enabled for custom/skip-login session support"),
+            );
             console.log(
               styleText(
                 "gray",
@@ -1604,10 +1606,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       const aliasList = [...aliasesRequiringRestart].join(", ");
       console.log();
       console.log(
-        styleText(
-          "yellow",
-          `[!] Restart required for active runtime-proxy aliases: ${aliasList}`,
-        ),
+        styleText("yellow", `[!] Restart required for active runtime-proxy aliases: ${aliasList}`),
       );
       console.log(
         styleText(

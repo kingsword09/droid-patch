@@ -303,5 +303,8 @@ void test("mission worker auto-exit patch preserves byte length", async () => {
   const patched = await readFile(outputPath, "utf8");
   assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
   assert.match(patched, MISSION_WORKER_EXIT_PATCHED_REGEX);
-  assert.doesNotMatch(patched, /if\(Wd\(vT\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)/);
+  assert.doesNotMatch(
+    patched,
+    /if\(Wd\(vT\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)/,
+  );
 });
