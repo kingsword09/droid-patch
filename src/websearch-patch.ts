@@ -179,12 +179,36 @@ trap cleanup EXIT INT TERM
 [ -n "$DROID_SEARCH_DEBUG" ] && echo "[websearch] Starting proxy..." >&2
 [ "$STANDALONE" = "1" ] && [ -n "$DROID_SEARCH_DEBUG" ] && echo "[websearch] Standalone mode enabled" >&2
 
-if [ -n "$DROID_SEARCH_DEBUG" ]; then
-  ${standaloneEnv}${skipLoginEnv}${factoryCompatEnv}SEARCH_PROXY_PORT=0 SEARCH_PROXY_PORT_FILE="$PORT_FILE" node "$PROXY_SCRIPT" 2>&1 &
-else
-  ${standaloneEnv}${skipLoginEnv}${factoryCompatEnv}SEARCH_PROXY_PORT=0 SEARCH_PROXY_PORT_FILE="$PORT_FILE" node "$PROXY_SCRIPT" >/dev/null 2>&1 &
-fi
-PROXY_PID=$!
+start_proxy_supervisor() {
+  (
+    child_pid=""
+    requested_port=""
+    trap 'if [ -n "$child_pid" ] && kill -0 "$child_pid" 2>/dev/null; then kill "$child_pid" 2>/dev/null; wait "$child_pid" 2>/dev/null; fi; exit 0' INT TERM
+
+    while true; do
+      rm -f "$PORT_FILE"
+      if [ -n "$DROID_SEARCH_DEBUG" ]; then
+        ${standaloneEnv}${skipLoginEnv}${factoryCompatEnv}SEARCH_PROXY_PORT="\${requested_port:-0}" SEARCH_PROXY_PORT_FILE="$PORT_FILE" node "$PROXY_SCRIPT" 2>&1 &
+      else
+        ${standaloneEnv}${skipLoginEnv}${factoryCompatEnv}SEARCH_PROXY_PORT="\${requested_port:-0}" SEARCH_PROXY_PORT_FILE="$PORT_FILE" node "$PROXY_SCRIPT" >/dev/null 2>&1 &
+      fi
+      child_pid=$!
+      wait "$child_pid"
+      exit_code=$?
+      child_pid=""
+
+      if [ -z "$requested_port" ] && [ -f "$PORT_FILE" ]; then
+        requested_port=$(cat "$PORT_FILE" 2>/dev/null)
+      fi
+
+      [ -n "$DROID_SEARCH_DEBUG" ] && echo "[websearch] Proxy exited (code: $exit_code); restarting..." >&2
+      sleep 1
+    done
+  ) &
+  PROXY_PID=$!
+}
+
+start_proxy_supervisor
 
 for i in {1..50}; do
   if ! kill -0 "$PROXY_PID" 2>/dev/null; then
@@ -208,7 +232,6 @@ if [ ! -f "$PORT_FILE" ] || [ -z "$(cat "$PORT_FILE" 2>/dev/null)" ]; then
 fi
 
 ACTUAL_PORT=$(cat "$PORT_FILE")
-rm -f "$PORT_FILE"
 
 export FACTORY_API_BASE_URL_OVERRIDE="http://127.0.0.1:$ACTUAL_PORT"
 export FACTORY_API_BASE_URL="http://127.0.0.1:$ACTUAL_PORT"
