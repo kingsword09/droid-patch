@@ -33,6 +33,21 @@ const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
   /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_REPLACEMENT =
   'async function $1($2){if(/^fk/.test($2))return{userId:"f",orgId:"f"};let $3=await fetch(`${$4().apiBaseUrl}/api/cli/whoami`,{headers:{Authorization:`Bearer ${$2}`}});if(!$3.ok)throw new $7("API key verification failed");$3=$9(await $3.text(),$10,"whoami response");return{userId:$3.userId,email:"",orgId:$3.orgId}        }';
+const MISSION_WORKER_EXIT_SOURCE =
+  'if(Wd(vT().getCurrentSessionTags())&&!this.wasInterrupted)MH("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)';
+const MISSION_WORKER_EXIT_REGEX =
+  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
+const MISSION_WORKER_EXIT_PATCHED_REGEX =
+  /if\(0\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
+
+function createMissionWorkerExitReplacement(match) {
+  const captures = new RegExp(MISSION_WORKER_EXIT_REGEX.source).exec(match);
+  assert.ok(captures);
+  return `if(0)${captures[3]}("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)`.padEnd(
+    match.length,
+    " ",
+  );
+}
 const SKIP_LOGIN_V068_SOURCE = "process.env[LongerName.FACTORY_API_KEY]?.trim()";
 
 async function runCliDryRunWithFactorydPatch(binaryMarker) {
@@ -196,6 +211,7 @@ void test("factoryd self-path patch still applies for non-skip-login binary patc
     `${FACTORYD_PATH_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\nisCustom:!0`,
   );
   assert.match(stdout, /\[\*\] Checking patch: factorydSelfPath/);
+  assert.match(stdout, /\[\*\] Checking patch: missionWorkerStayAlive/);
   assert.doesNotMatch(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
   assert.match(stdout, /\[\*\] Checking patch: isCustom/);
 });
@@ -250,8 +266,45 @@ void test("factoryd skip-login auth patch preserves byte length across whoami he
 
 void test("skip-login dry-run also finds the factoryd auth bypass patch", async () => {
   const { stdout } = await runCliDryRunWithSkipLogin(
-    `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}`,
+    `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\n${MISSION_WORKER_EXIT_SOURCE}`,
   );
   assert.match(stdout, /\[\*\] Checking patch: factoryApiKeyLookupV068/);
+  assert.match(stdout, /\[\*\] Checking patch: missionWorkerStayAlive/);
   assert.match(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
+});
+
+void test("mission worker auto-exit patch preserves byte length", async () => {
+  const { patchDroid } = await import(new URL("../dist/index.mjs", import.meta.url));
+  const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
+  const inputPath = join(dir, "input.js");
+  const outputPath = join(dir, "output.js");
+  const source = `${MISSION_WORKER_EXIT_SOURCE}\n`;
+
+  await writeFile(inputPath, source, "utf8");
+
+  const result = await patchDroid({
+    inputPath,
+    outputPath,
+    backup: false,
+    patches: [
+      {
+        name: "missionWorkerStayAlive",
+        description: "test mission worker auto-exit bypass",
+        pattern: Buffer.from(""),
+        replacement: Buffer.from(""),
+        regexPattern: MISSION_WORKER_EXIT_REGEX,
+        regexReplacement: createMissionWorkerExitReplacement,
+        alreadyPatchedRegexPattern: MISSION_WORKER_EXIT_PATCHED_REGEX,
+      },
+    ],
+  });
+
+  assert.equal(result.success, true);
+  const patched = await readFile(outputPath, "utf8");
+  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
+  assert.match(patched, MISSION_WORKER_EXIT_PATCHED_REGEX);
+  assert.doesNotMatch(
+    patched,
+    /if\(Wd\(vT\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)/,
+  );
 });

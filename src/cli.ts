@@ -334,6 +334,20 @@ const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
   /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
   /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
+const MISSION_WORKER_EXIT_REGEX =
+  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
+const MISSION_WORKER_EXIT_PATCHED_REGEX =
+  /if\(0\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)\s*/g;
+
+function createMissionWorkerExitReplacement(match: string): string {
+  const captures = new RegExp(MISSION_WORKER_EXIT_REGEX.source).exec(match);
+  if (!captures) {
+    throw new Error("Failed to parse mission worker auto-exit match");
+  }
+
+  const replacement = `if(0)${captures[3]}("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)`;
+  return replacement.padEnd(match.length, " ");
+}
 
 function createFactorydSelfPathPatch(): Patch {
   return {
@@ -362,6 +376,19 @@ function createFactorydSkipLoginAuthPatch(): Patch {
   };
 }
 
+function createMissionWorkerStayAlivePatch(): Patch {
+  return {
+    name: "missionWorkerStayAlive",
+    description:
+      "Disable worker auto-exit after a completed turn so mission workers are not treated as crashed",
+    pattern: Buffer.from(""),
+    replacement: Buffer.from(""),
+    regexPattern: MISSION_WORKER_EXIT_REGEX,
+    regexReplacement: createMissionWorkerExitReplacement,
+    alreadyPatchedRegexPattern: MISSION_WORKER_EXIT_PATCHED_REGEX,
+  };
+}
+
 type BinaryPatchConfig = {
   isCustom: boolean;
   skipLogin: boolean;
@@ -383,11 +410,15 @@ function needsBinaryPatches(config: BinaryPatchConfig): boolean {
 }
 
 function createMissionFactorydPatches(config: Pick<BinaryPatchConfig, "skipLogin">): Patch[] {
-  const patches = [createFactorydSelfPathPatch()];
+  const patches = [createFactorydSelfPathPatch(), createMissionWorkerStayAlivePatch()];
   if (config.skipLogin) {
     patches.push(createFactorydSkipLoginAuthPatch());
   }
   return patches;
+}
+
+function requiresRuntimeProxy(config: Pick<BinaryPatchConfig, "isCustom" | "skipLogin">): boolean {
+  return config.isCustom || config.skipLogin;
 }
 
 function appendIsCustomPatches(patches: Patch[], droidPath: string | undefined): void {
@@ -568,6 +599,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
     // Wrapper-only mode (no binary patching needed):
     // - --websearch or --websearch-proxy (optional --standalone)
     const isWebsearchMode = websearch || websearchProxy;
+    const useRuntimeProxy = isWebsearchMode || requiresRuntimeProxy({ isCustom, skipLogin });
     if (!needsBinaryPatch && isWebsearchMode) {
       if (!alias) {
         const flag = websearchProxy ? "--websearch-proxy" : "--websearch";
@@ -607,6 +639,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         standalone,
         websearchProxy, // useNativeProvider flag
         skipLogin,
+        false,
       );
       execTargetPath = wrapperScript;
 
@@ -997,7 +1030,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
         let execTargetPath = result.outputPath;
 
-        if (websearch || websearchProxy) {
+        if (useRuntimeProxy) {
           const proxyDir = join(homedir(), ".droid-patch", "proxy");
           const { wrapperScript } = await createWebSearchUnifiedFiles(
             proxyDir,
@@ -1007,6 +1040,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             standalone,
             websearchProxy, // useNativeProvider flag
             skipLogin,
+            requiresRuntimeProxy({ isCustom, skipLogin }),
           );
           execTargetPath = wrapperScript;
 
@@ -1015,9 +1049,19 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             console.log(styleText("cyan", "WebSearch enabled (native provider mode)"));
             console.log(styleText("gray", "  Requires proxy plugin (anthropic4droid)"));
             console.log(styleText("gray", "  Reads model config from ~/.factory/settings.json"));
-          } else {
+          } else if (websearch) {
             console.log(styleText("cyan", "WebSearch enabled (external providers mode)"));
             console.log(styleText("white", `  Forward target: ${websearchTarget}`));
+          } else {
+            console.log(
+              styleText("cyan", "Runtime proxy enabled for custom/skip-login session support"),
+            );
+            console.log(
+              styleText(
+                "gray",
+                "  Adds local Factory API compatibility shims needed by custom and mission worker flows",
+              ),
+            );
           }
           if (standalone) {
             console.log(styleText("white", `  Standalone mode: enabled`));
@@ -1025,7 +1069,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         }
 
         let aliasResult;
-        if (websearch || websearchProxy) {
+        if (useRuntimeProxy) {
           aliasResult = await createAliasForWrapper(execTargetPath, alias, verbose);
         } else {
           aliasResult = await createAlias(result.outputPath, alias, verbose);
@@ -1210,6 +1254,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
 
     let successCount = 0;
     let failCount = 0;
+    const aliasesRequiringRestart = new Set<string>();
 
     for (const meta of metaList) {
       if (!meta) continue;
@@ -1414,7 +1459,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
         // Support both new 'websearch' field and old 'proxy' field for backward compatibility
         const hasWebsearch =
           meta.patches.websearch || !!meta.patches.websearchProxy || !!meta.patches.proxy;
-        if (hasWebsearch) {
+        const needsRuntimeProxy = requiresRuntimeProxy({
+          isCustom: meta.patches.isCustom,
+          skipLogin: meta.patches.skipLogin,
+        });
+        if (hasWebsearch || needsRuntimeProxy) {
           // Determine forward target: apiBase > proxy (legacy) > default
           const forwardTarget =
             meta.patches.apiBase || meta.patches.proxy || "https://api.factory.ai";
@@ -1427,6 +1476,7 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             meta.patches.standalone || false,
             meta.patches.websearchProxy || false,
             meta.patches.skipLogin || false,
+            needsRuntimeProxy,
           );
           execTargetPath = wrapperScript;
           if (verbose) {
@@ -1441,6 +1491,11 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
             meta.patches.apiBase = meta.patches.proxy;
             delete meta.patches.proxy;
           }
+
+          // Existing alias sessions keep using the proxy process that was started
+          // when the wrapper launched. Updating files on disk does not hot-reload
+          // those already-running proxy instances.
+          aliasesRequiringRestart.add(meta.name);
         }
 
         // If this alias previously used removed features (statusline/sessions), drop legacy flags
@@ -1547,6 +1602,25 @@ bin("droid-patch", "CLI tool to patch droid binary with various modifications")
       console.log(styleText("gray", `  Success: ${successCount}, Failed: ${failCount}`));
     }
     console.log(styleText("cyan", "═".repeat(60)));
+    if (!dryRun && aliasesRequiringRestart.size > 0) {
+      const aliasList = [...aliasesRequiringRestart].join(", ");
+      console.log();
+      console.log(
+        styleText("yellow", `[!] Restart required for active runtime-proxy aliases: ${aliasList}`),
+      );
+      console.log(
+        styleText(
+          "gray",
+          "    Existing sessions keep the old proxy process until that alias exits.",
+        ),
+      );
+      console.log(
+        styleText(
+          "gray",
+          "    Exit and relaunch those aliases before retesting mission startup or skip-login behavior.",
+        ),
+      );
+    }
   })
   .command("add-model", "Add a custom model to settings.json (interactive if no options)")
   .option("-m, --model <model>", "Model name (e.g., claude-sonnet-4-20250514)")

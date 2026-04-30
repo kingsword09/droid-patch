@@ -413,6 +413,31 @@ void test("native websearch proxy mocks mission billing endpoints for patched fk
       assert.equal(billingPayload.usesTokenRateLimitsBilling, false);
       assert.equal(billingPayload.overagePreference, null);
 
+      const managedSettingsResponse = await requestJson(
+        port,
+        "/api/organization/managed-settings",
+        {
+          method: "GET",
+          headers: authHeaders,
+        },
+      );
+      assert.equal(managedSettingsResponse.status, 200);
+      assert.deepEqual(await managedSettingsResponse.json(), {
+        success: true,
+        factoryTier: "team",
+        settings: {},
+      });
+
+      const featureFlagsResponse = await requestJson(port, "/api/feature-flags", {
+        method: "GET",
+        headers: authHeaders,
+      });
+      assert.equal(featureFlagsResponse.status, 200);
+      assert.deepEqual(await featureFlagsResponse.json(), {
+        flags: {},
+        configs: {},
+      });
+
       const updateResponse = await requestJson(
         port,
         "/api/organization/subscription/set-overage-preference",
@@ -465,7 +490,45 @@ void test("native websearch proxy wrapper exports skip-login marker for patched 
     const wrapperText = await readFile(wrapperPath, "utf8");
     const proxyText = await readFile(proxyPath, "utf8");
     assert.match(wrapperText, /DROID_SKIP_LOGIN=1/);
+    assert.match(wrapperText, /DROID_FACTORY_COMPAT=1/);
     assert.match(proxyText, /const SKIP_LOGIN_PATCHED = process\.env\.DROID_SKIP_LOGIN === '1';/);
+    assert.match(
+      proxyText,
+      /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/,
+    );
+  } finally {
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("is-custom aliases also opt into Factory compat wrapper without explicit websearch flags", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+
+  try {
+    const droidPath = await createFakeMissionCapableDroidBinary(homeDir);
+    const binDir = join(homeDir, "bin");
+    await mkdir(binDir, { recursive: true });
+
+    await execFileAsync(
+      process.execPath,
+      [CLI_PATH, "--is-custom", "-p", droidPath, "droid-custom"],
+      {
+        cwd: PROJECT_ROOT,
+        env: { ...process.env, HOME: homeDir, PATH: `${binDir}:${process.env.PATH}` },
+      },
+    );
+
+    const wrapperPath = join(homeDir, ".droid-patch", "proxy", "droid-custom");
+    const proxyPath = join(homeDir, ".droid-patch", "proxy", "droid-custom-proxy.js");
+    const wrapperText = await readFile(wrapperPath, "utf8");
+    const proxyText = await readFile(proxyPath, "utf8");
+
+    assert.match(wrapperText, /DROID_FACTORY_COMPAT=1/);
+    assert.doesNotMatch(wrapperText, /DROID_SKIP_LOGIN=1/);
+    assert.match(
+      proxyText,
+      /const FACTORY_COMPAT_PATCHED = process\.env\.DROID_FACTORY_COMPAT === '1';/,
+    );
   } finally {
     await rm(homeDir, { recursive: true, force: true });
   }
@@ -596,4 +659,38 @@ void test("websearch-proxy update path regenerates native wrappers", async () =>
   const src = await readFile(new URL("../src/cli.ts", import.meta.url), "utf8");
   assert.match(src, /meta\.patches\.websearchProxy/);
   assert.match(src, /createWebSearchUnifiedFiles\([\s\S]*meta\.patches\.websearchProxy \|\| false/);
+});
+
+void test("is-custom and skip-login aliases opt into runtime Factory compat proxy", async () => {
+  const src = await readFile(new URL("../src/cli.ts", import.meta.url), "utf8");
+  assert.match(
+    src,
+    /function requiresRuntimeProxy\(config: Pick<BinaryPatchConfig, "isCustom" \| "skipLogin">\)/,
+  );
+  assert.match(src, /requiresRuntimeProxy\(\{ isCustom, skipLogin \}\)/);
+  assert.match(
+    src,
+    /requiresRuntimeProxy\(\{\s*isCustom: meta\.patches\.isCustom,\s*skipLogin: meta\.patches\.skipLogin,\s*\}\)/,
+  );
+});
+
+void test("factory compat proxy logic is centralized in a dedicated module", async () => {
+  const nativeSrc = await readFile(new URL("../src/websearch-native.ts", import.meta.url), "utf8");
+  const externalSrc = await readFile(
+    new URL("../src/websearch-external.ts", import.meta.url),
+    "utf8",
+  );
+  const compatSrc = await readFile(
+    new URL("../src/runtime-proxy-factory-compat.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(nativeSrc, /from "\.\/runtime-proxy-factory-compat\.ts"/);
+  assert.match(externalSrc, /from "\.\/runtime-proxy-factory-compat\.ts"/);
+  assert.match(nativeSrc, /generateFactoryCompatPrelude\(\)/);
+  assert.match(nativeSrc, /generateFactoryCompatRoutes\(\)/);
+  assert.match(externalSrc, /generateFactoryCompatPrelude\(\)/);
+  assert.match(externalSrc, /generateFactoryCompatRoutes\(\)/);
+  assert.match(compatSrc, /export function generateFactoryCompatPrelude/);
+  assert.match(compatSrc, /export function generateFactoryCompatRoutes/);
 });
