@@ -15,6 +15,8 @@ export interface Patch {
     pattern: Buffer;
     replacement: Buffer;
   }>;
+  // Semantic matching for minified bundles where stable anchors are more reliable than full regexes.
+  semanticMatcher?: (content: string) => SemanticPatchMatch[];
   // Regex-based matching: use $1, $2, etc. in regexReplacement for capture groups
   regexPattern?: RegExp;
   regexReplacement?: string | ((match: string) => string);
@@ -24,6 +26,12 @@ export interface Patch {
   skipIfAnySucceeded?: string[];
   // Only show check logs when this patch actually matches or is already patched.
   suppressCheckUnlessFound?: boolean;
+}
+
+export interface SemanticPatchMatch {
+  charIndex: number;
+  match: string;
+  replacement: string;
 }
 
 export interface PatchOptions {
@@ -70,6 +78,34 @@ function writeReplacementBytes(
 
   if (replacementBytes.length < matchBytes.length) {
     target.fill(0x20, position + replacementBytes.length, position + matchBytes.length);
+  }
+}
+
+function charIndexToBytePosition(content: string, charIndex: number): number {
+  return Buffer.byteLength(content.slice(0, charIndex), "utf-8");
+}
+
+function applyTextMatches(
+  workingBuffer: Buffer,
+  content: string,
+  matches: SemanticPatchMatch[],
+): void {
+  for (const { charIndex, match, replacement } of matches) {
+    const matchBuffer = Buffer.from(match, "utf-8");
+    const replacementBuffer = Buffer.from(replacement, "utf-8");
+    const bytePos = charIndexToBytePosition(content, charIndex);
+    const currentMatch = workingBuffer.subarray(bytePos, bytePos + matchBuffer.length);
+
+    if (!currentMatch.equals(matchBuffer)) {
+      const fallbackBytePos = workingBuffer.indexOf(matchBuffer);
+      if (fallbackBytePos === -1) {
+        continue;
+      }
+      writeReplacementBytes(workingBuffer, fallbackBytePos, matchBuffer, replacementBuffer);
+      continue;
+    }
+
+    writeReplacementBytes(workingBuffer, bytePos, matchBuffer, replacementBuffer);
   }
 }
 
@@ -143,6 +179,57 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
       logCheckHeader();
     }
 
+    // Handle semantic matching
+    if (patch.semanticMatcher) {
+      const content = workingBuffer.toString("utf-8");
+      const matches = patch.semanticMatcher(content);
+
+      if (matches.length === 0) {
+        let alreadyPatched = false;
+        if (patch.alreadyPatchedRegexPattern) {
+          const alreadyPatchedRegex = new RegExp(patch.alreadyPatchedRegexPattern.source, "g");
+          alreadyPatched = alreadyPatchedRegex.test(content);
+        }
+        if (!suppressCheckUnlessFound || alreadyPatched) {
+          logCheckHeader();
+        }
+        if (!suppressCheckUnlessFound) {
+          console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
+        }
+        const missIsHidden = suppressCheckUnlessFound && !alreadyPatched;
+        const result = {
+          name: patch.name,
+          found: 0,
+          success: alreadyPatched || missIsHidden,
+          alreadyPatched,
+          hidden: missIsHidden,
+        };
+        results.push(result);
+        resultByName.set(patch.name, result);
+        if (alreadyPatched) {
+          console.log(styleText("blue", `    ✓ Binary appears to be already patched`));
+        }
+        continue;
+      }
+
+      logCheckHeader();
+      console.log(styleText("green", `    ✓ Found ${matches.length} occurrences (semantic)`));
+
+      if (!dryRun) {
+        applyTextMatches(workingBuffer, content, matches);
+      }
+
+      const result = {
+        name: patch.name,
+        found: matches.length,
+        positions: matches.map((m) => m.charIndex),
+        success: true,
+      };
+      results.push(result);
+      resultByName.set(patch.name, result);
+      continue;
+    }
+
     // Handle regex-based matching
     // For binary files, convert pattern/replacement to Buffer and use findAllPositions
     if (patch.regexPattern && patch.regexReplacement) {
@@ -212,13 +299,8 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
               ),
             );
           }
-
-          // Find the actual byte position in the buffer
-          const bytePos = workingBuffer.indexOf(matchBuffer);
-          if (bytePos !== -1) {
-            writeReplacementBytes(workingBuffer, bytePos, matchBuffer, replacementBuffer);
-          }
         }
+        applyTextMatches(workingBuffer, content, matches);
       }
 
       const result = {
@@ -429,6 +511,20 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
     if (results[i]?.hidden || results[i]?.skipped) {
       continue;
     }
+    if (patch.semanticMatcher) {
+      const content = verifyBuffer.toString("utf-8");
+      const oldMatches = patch.semanticMatcher(content);
+      if (oldMatches.length === 0) {
+        console.log(styleText("green", `    ✓ ${patch.name}: Verified (semantic)`));
+      } else {
+        console.log(
+          styleText("red", `    ✗ ${patch.name}: ${oldMatches.length} occurrences not patched`),
+        );
+        allVerified = false;
+      }
+      continue;
+    }
+
     // Handle regex-based patches
     if (patch.regexPattern && patch.regexReplacement) {
       const content = verifyBuffer.toString("utf-8");

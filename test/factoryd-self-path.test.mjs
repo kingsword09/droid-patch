@@ -27,28 +27,15 @@ const FACTORYD_SKIP_LOGIN_AUTH_VARIANTS = [
   'async function KkH(H){let A=f0().apiBaseUrl,T=await fetch(`${A}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),R=await T.text();if(!T.ok)throw new bH("API key verification failed",{statusCode:T.status,body:R});let L=uj(R,gOT,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}',
   'async function QMH(H){let A=t9().apiBaseUrl,T=await fetch(`${A}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}}),R=await T.text();if(!T.ok)throw new zH("API key verification failed",{statusCode:T.status,body:R});let L=xV(R,QtA,"whoami response");return{userId:L.userId,email:"",orgId:L.orgId}}',
 ];
-const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
-  /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
-const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
-  /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
-const FACTORYD_SKIP_LOGIN_AUTH_REPLACEMENT =
-  'async function $1($2){if(/^fk/.test($2))return{userId:"f",orgId:"f"};let $3=await fetch(`${$4().apiBaseUrl}/api/cli/whoami`,{headers:{Authorization:`Bearer ${$2}`}});if(!$3.ok)throw new $7("API key verification failed");$3=$9(await $3.text(),$10,"whoami response");return{userId:$3.userId,email:"",orgId:$3.orgId}        }';
 const MISSION_WORKER_EXIT_SOURCE =
   'if(Wd(vT().getCurrentSessionTags())&&!this.wasInterrupted)MH("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)';
-const MISSION_WORKER_EXIT_REGEX =
-  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
+const MISSION_WORKER_EXIT_V0115_SOURCE =
+  'if(fd(uT().getCurrentSessionTags())&&!this.wasInterrupted)kH("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),await Bq(0)';
 const MISSION_WORKER_EXIT_PATCHED_REGEX =
-  /if\(0\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
-
-function createMissionWorkerExitReplacement(match) {
-  const captures = new RegExp(MISSION_WORKER_EXIT_REGEX.source).exec(match);
-  assert.ok(captures);
-  return `if(0)${captures[3]}("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)`.padEnd(
-    match.length,
-    " ",
-  );
-}
+  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc\] Worker session exiting after completing turn"\)/;
 const SKIP_LOGIN_V068_SOURCE = "process.env[LongerName.FACTORY_API_KEY]?.trim()";
+const FACTORYD_SKIP_LOGIN_AUTH_V0115_SOURCE =
+  'async function pFT(H){let T=VL().apiBaseUrl,R;try{R=await fetch(`${T}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}})}catch(h){throw zH("FACTORY_API_KEY verification network failed",{reason:"network",cause:h}),h}let A=await R.text();if(!R.ok)throw zH("FACTORY_API_KEY verification rejected",{statusCode:R.status}),new sH("API key verification failed",{statusCode:R.status,body:A});let L;try{L=bo(A,Z2R,"whoami response")}catch(h){throw zH("FACTORY_API_KEY verification parse failed",{reason:"parse",cause:h}),h}return{userId:L.userId,email:"",orgId:L.orgId}}';
 
 async function runCliDryRunWithFactorydPatch(binaryMarker) {
   const dir = await mkdtemp(join(tmpdir(), "droid-patch-cli-"));
@@ -57,7 +44,7 @@ async function runCliDryRunWithFactorydPatch(binaryMarker) {
   const script = IS_WINDOWS
     ? `@echo off
 if "%~1"=="--version" (
-  echo 0.90.0
+  echo 0.115.0
   exit /b 0
 )
 echo noop
@@ -65,7 +52,7 @@ rem ${binaryMarker}
 `
     : `#!/bin/sh
 if [ "$1" = "--version" ]; then
-  printf '0.90.0\\n'
+  printf '0.115.0\\n'
   exit 0
 fi
 printf 'noop\\n'
@@ -91,7 +78,7 @@ async function runCliDryRunWithSkipLogin(binaryMarker) {
   const script = IS_WINDOWS
     ? `@echo off
 if "%~1"=="--version" (
-  echo 0.90.0
+  echo 0.115.0
   exit /b 0
 )
 echo noop
@@ -99,7 +86,7 @@ rem ${binaryMarker}
 `
     : `#!/bin/sh
 if [ "$1" = "--version" ]; then
-  printf '0.90.0\\n'
+  printf '0.115.0\\n'
   exit 0
 fi
 printf 'noop\\n'
@@ -118,11 +105,54 @@ printf 'noop\\n'
   );
 }
 
+async function runCliPatchWithSkipLogin(binaryMarker) {
+  const dir = await mkdtemp(join(tmpdir(), "droid-patch-cli-"));
+  const outputDir = await mkdtemp(join(tmpdir(), "droid-patch-out-"));
+  const alias = "droid-test";
+  const fakeDroidPath = join(dir, IS_WINDOWS ? "droid.cmd" : "droid");
+  const cliPath = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+  const script = IS_WINDOWS
+    ? `@echo off
+if "%~1"=="--version" (
+  echo 0.115.0
+  exit /b 0
+)
+echo noop
+rem ${binaryMarker}
+`
+    : `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '0.115.0\\n'
+  exit 0
+fi
+printf 'noop\\n'
+# ${binaryMarker}
+`;
+
+  await writeFile(fakeDroidPath, script, "utf8");
+  if (!IS_WINDOWS) {
+    await chmod(fakeDroidPath, 0o755);
+  }
+
+  const result = await execFileAsync(
+    process.execPath,
+    [cliPath, "--skip-login", "--no-backup", "-p", fakeDroidPath, "-o", outputDir, alias],
+    { cwd: join(fileURLToPath(new URL("..", import.meta.url))) },
+  );
+
+  return {
+    ...result,
+    source: script,
+    outputPath: join(outputDir, alias),
+  };
+}
+
 void test("factoryd self-path patch stays internal", async () => {
   const src = await readFile(new URL("../src/cli.ts", import.meta.url), "utf8");
   const metadataSrc = await readFile(new URL("../src/metadata.ts", import.meta.url), "utf8");
   assert.match(src, /FACTORYD_SELF_PATH_REGEX/);
-  assert.match(src, /FACTORYD_SKIP_LOGIN_AUTH_REGEX/);
+  assert.match(src, /createFactorydSkipLoginAuthSemanticMatches/);
+  assert.match(src, /createMissionWorkerStayAliveSemanticMatches/);
   assert.doesNotMatch(src, /--factoryd-self-path/);
   assert.doesNotMatch(src, /meta\.patches\.factorydSelfPath/);
   assert.doesNotMatch(metadataSrc, /factorydSelfPath/);
@@ -225,42 +255,22 @@ void test("factoryd self-path patch also applies for 0.98 command resolver binar
 });
 
 void test("factoryd skip-login auth patch preserves byte length across whoami helpers", async () => {
-  const { patchDroid } = await import(new URL("../dist/index.mjs", import.meta.url));
-  for (const source of FACTORYD_SKIP_LOGIN_AUTH_VARIANTS) {
-    const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
-    const inputPath = join(dir, "input.js");
-    const outputPath = join(dir, "output.js");
-    const input = `${source}\n`;
+  for (const source of [
+    ...FACTORYD_SKIP_LOGIN_AUTH_VARIANTS,
+    FACTORYD_SKIP_LOGIN_AUTH_V0115_SOURCE,
+  ]) {
+    const marker = `${SKIP_LOGIN_V068_SOURCE}\n${source}\n${MISSION_WORKER_EXIT_SOURCE}`;
+    const result = await runCliPatchWithSkipLogin(marker);
+    const patched = await readFile(result.outputPath, "utf8");
 
-    await writeFile(inputPath, input, "utf8");
-
-    const result = await patchDroid({
-      inputPath,
-      outputPath,
-      backup: false,
-      patches: [
-        {
-          name: "factorydSkipLoginAuth",
-          description: "test skip-login whoami helper replacement",
-          pattern: Buffer.from(""),
-          replacement: Buffer.from(""),
-          regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
-          regexReplacement: FACTORYD_SKIP_LOGIN_AUTH_REPLACEMENT,
-          alreadyPatchedRegexPattern: FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX,
-        },
-      ],
-    });
-
-    assert.equal(result.success, true, source);
-    const patched = await readFile(outputPath, "utf8");
-    assert.equal(Buffer.byteLength(patched), Buffer.byteLength(input), source);
-    assert.match(patched, new RegExp(FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX.source), source);
+    assert.equal(Buffer.byteLength(patched), Buffer.byteLength(result.source), source);
     assert.match(
       patched,
       /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/,
       source,
     );
     assert.doesNotMatch(patched, /method:"GET"/, source);
+    assert.match(result.stdout, /factorydSkipLoginAuth: Verified \(semantic\)/, source);
   }
 });
 
@@ -273,38 +283,26 @@ void test("skip-login dry-run also finds the factoryd auth bypass patch", async 
   assert.match(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
 });
 
-void test("mission worker auto-exit patch preserves byte length", async () => {
-  const { patchDroid } = await import(new URL("../dist/index.mjs", import.meta.url));
-  const dir = await mkdtemp(join(tmpdir(), "droid-patch-"));
-  const inputPath = join(dir, "input.js");
-  const outputPath = join(dir, "output.js");
-  const source = `${MISSION_WORKER_EXIT_SOURCE}\n`;
-
-  await writeFile(inputPath, source, "utf8");
-
-  const result = await patchDroid({
-    inputPath,
-    outputPath,
-    backup: false,
-    patches: [
-      {
-        name: "missionWorkerStayAlive",
-        description: "test mission worker auto-exit bypass",
-        pattern: Buffer.from(""),
-        replacement: Buffer.from(""),
-        regexPattern: MISSION_WORKER_EXIT_REGEX,
-        regexReplacement: createMissionWorkerExitReplacement,
-        alreadyPatchedRegexPattern: MISSION_WORKER_EXIT_PATCHED_REGEX,
-      },
-    ],
-  });
-
-  assert.equal(result.success, true);
-  const patched = await readFile(outputPath, "utf8");
-  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(source));
-  assert.match(patched, MISSION_WORKER_EXIT_PATCHED_REGEX);
-  assert.doesNotMatch(
-    patched,
-    /if\(Wd\(vT\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)/,
+void test("skip-login dry-run handles 0.115 factoryd whoami helper and worker exit", async () => {
+  const { stdout } = await runCliDryRunWithSkipLogin(
+    `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_V0115_SOURCE}\n${MISSION_WORKER_EXIT_V0115_SOURCE}`,
   );
+  assert.match(stdout, /\[\*\] Checking patch: factoryApiKeyLookupV068/);
+  assert.match(stdout, /\[\*\] Checking patch: missionWorkerStayAlive/);
+  assert.match(stdout, /missionWorkerStayAlive: 1 occurrences will be patched/);
+  assert.match(stdout, /\[\*\] Checking patch: factorydSkipLoginAuth/);
+  assert.match(stdout, /factorydSkipLoginAuth: 1 occurrences will be patched/);
+  assert.doesNotMatch(stdout, /factorydSelfPath: Pattern not found/);
+});
+
+void test("mission worker auto-exit patch preserves byte length", async () => {
+  for (const workerSource of [MISSION_WORKER_EXIT_SOURCE, MISSION_WORKER_EXIT_V0115_SOURCE]) {
+    const marker = `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\n${workerSource}`;
+    const result = await runCliPatchWithSkipLogin(marker);
+    const patched = await readFile(result.outputPath, "utf8");
+
+    assert.equal(Buffer.byteLength(patched), Buffer.byteLength(result.source), workerSource);
+    assert.match(patched, MISSION_WORKER_EXIT_PATCHED_REGEX, workerSource);
+    assert.match(result.stdout, /missionWorkerStayAlive: Verified \(semantic\)/, workerSource);
+  }
 });
