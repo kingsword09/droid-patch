@@ -95,6 +95,14 @@ function regexMatchesText(text: string, regex: RegExp): boolean {
 }
 
 function patchMatchesBinary(binaryBuffer: Buffer, binaryText: string, patch: Patch): boolean {
+  if (patch.semanticMatcher) {
+    return (
+      patch.semanticMatcher(binaryText).length > 0 ||
+      (!!patch.alreadyPatchedRegexPattern &&
+        regexMatchesText(binaryText, patch.alreadyPatchedRegexPattern))
+    );
+  }
+
   if (patch.regexPattern) {
     return (
       regexMatchesText(binaryText, patch.regexPattern) ||
@@ -330,23 +338,264 @@ const FACTORYD_SELF_PATH_REGEX =
   /if\(([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\("droid"\)\)/g;
 const FACTORYD_SELF_PATH_PATCHED_REGEX =
   /if\(\(1\|\|([A-Za-z$_][A-Za-z0-9$_]*)\.basename\(process\.execPath\)\.includes\(""\)\)\)/g;
-const FACTORYD_SKIP_LOGIN_AUTH_REGEX =
-  /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl,([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{\3\}\/api\/cli\/whoami`,\{method:"GET",headers:\{Authorization:`Bearer \$\{\2\}`\}\}\),([A-Za-z$_][A-Za-z0-9$_]*)=await \5\.text\(\);if\(!\5\.ok\)throw new ([A-Za-z$_][A-Za-z0-9$_]*)\("API key verification failed",\{statusCode:\5\.status,body:\6\}\);let ([A-Za-z$_][A-Za-z0-9$_]*)=([A-Za-z$_][A-Za-z0-9$_]*)\(\6,([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\8\.userId,email:"",orgId:\8\.orgId\}\}/g;
+const JS_IDENTIFIER = "[A-Za-z$_][A-Za-z0-9$_]*";
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
-  /async function [A-Za-z$_][A-Za-z0-9$_]*\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(\/\^fk\/\.test\(\1\)\)return\{userId:"f",orgId:"f"\};let ([A-Za-z$_][A-Za-z0-9$_]*)=await fetch\(`\$\{([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.apiBaseUrl\}\/api\/cli\/whoami`,\{headers:\{Authorization:`Bearer \$\{\1\}`\}\}\);if\(!\2\.ok\)throw new [A-Za-z$_][A-Za-z0-9$_]*\("API key verification failed"\);\2=[A-Za-z$_][A-Za-z0-9$_]*\(await \2\.text\(\),([A-Za-z$_][A-Za-z0-9$_]*),"whoami response"\);return\{userId:\2\.userId,email:"",orgId:\2\.orgId\}\s+\}/g;
-const MISSION_WORKER_EXIT_REGEX =
-  /if\(([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\(\)\.getCurrentSessionTags\(\)\)&&!this\.wasInterrupted\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)/g;
+  /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/g;
+const MISSION_WORKER_EXIT_ANCHORS = [
+  '"[JsonRpc] Worker session exiting after completing turn"',
+  '"[JsonRpcStreamingExec] Worker session exiting after completing turn"',
+];
 const MISSION_WORKER_EXIT_PATCHED_REGEX =
-  /if\(0\)([A-Za-z$_][A-Za-z0-9$_]*)\("\[JsonRpc\] Worker session exiting after completing turn"\),await this\.stop\(\),process\.exit\(0\)\s*/g;
+  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc(?:StreamingExec)?\] Worker session exiting after completing turn"\)/g;
 
-function createMissionWorkerExitReplacement(match: string): string {
-  const captures = new RegExp(MISSION_WORKER_EXIT_REGEX.source).exec(match);
-  if (!captures) {
-    throw new Error("Failed to parse mission worker auto-exit match");
+type TextPatchMatch = ReturnType<NonNullable<Patch["semanticMatcher"]>>[number];
+
+interface AsyncFunctionBounds {
+  start: number;
+  end: number;
+  name: string;
+  params: string;
+  source: string;
+}
+
+function findMatchingDelimiter(
+  source: string,
+  openIndex: number,
+  openChar: string,
+  closeChar: string,
+): number {
+  let depth = 0;
+  let quote: '"' | "'" | "`" | null = null;
+  let escaped = false;
+
+  for (let i = openIndex; i < source.length; i++) {
+    const char = source[i];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+
+    if (char === openChar) {
+      depth++;
+    } else if (char === closeChar) {
+      depth--;
+      if (depth === 0) {
+        return i;
+      }
+    }
   }
 
-  const replacement = `if(0)${captures[3]}("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)`;
-  return replacement.padEnd(match.length, " ");
+  return -1;
+}
+
+function findEnclosingAsyncFunction(
+  content: string,
+  anchorIndex: number,
+): AsyncFunctionBounds | null {
+  let searchIndex = anchorIndex;
+  const headerRegex = new RegExp(`^async function\\s+(${JS_IDENTIFIER})\\s*\\(([^)]*)\\)\\s*\\{`);
+
+  while (searchIndex >= 0) {
+    const functionStart = content.lastIndexOf("async function", searchIndex);
+    if (functionStart === -1) {
+      return null;
+    }
+
+    const header = headerRegex.exec(content.slice(functionStart, functionStart + 160));
+    if (header) {
+      const openBraceIndex = functionStart + header[0].length - 1;
+      const end = findMatchingDelimiter(content, openBraceIndex, "{", "}");
+      if (end >= anchorIndex) {
+        return {
+          start: functionStart,
+          end: end + 1,
+          name: header[1],
+          params: header[2],
+          source: content.slice(functionStart, end + 1),
+        };
+      }
+    }
+
+    searchIndex = functionStart - 1;
+  }
+
+  return null;
+}
+
+function pickLocalIdentifier(avoid: string[]): string {
+  for (const candidate of ["R", "A", "L", "T", "r", "a", "l", "t", "_", "$"]) {
+    if (!avoid.includes(candidate)) {
+      return candidate;
+    }
+  }
+  return "$$";
+}
+
+function createFactorydSkipLoginAuthReplacement(
+  functionSource: string,
+  functionName: string,
+  params: string,
+  tokenParam: string,
+): string | null {
+  const apiBaseMatch =
+    /(?:let|var|const)\s+[A-Za-z$_][A-Za-z0-9$_]*=([^,;{}]+\.apiBaseUrl)/.exec(functionSource) ??
+    /\$\{([^}`]+\.apiBaseUrl)\}\/api\/cli\/whoami/.exec(functionSource);
+  const parseMatch = new RegExp(
+    `(${JS_IDENTIFIER})\\((?:await\\s+)?${JS_IDENTIFIER}(?:\\.text\\(\\))?,(${JS_IDENTIFIER}),"whoami response"\\)`,
+  ).exec(functionSource);
+  const errorMatch = new RegExp(`new (${JS_IDENTIFIER})\\("API key verification failed"`).exec(
+    functionSource,
+  );
+
+  if (!apiBaseMatch || !parseMatch) {
+    return null;
+  }
+
+  const apiBaseExpression = apiBaseMatch[1];
+  const parseFunction = parseMatch[1];
+  const responseSchema = parseMatch[2];
+  const errorConstructor = errorMatch?.[1] ?? "Error";
+  if (!apiBaseExpression || /[`{}]/.test(apiBaseExpression)) {
+    return null;
+  }
+
+  const responseVar = pickLocalIdentifier([
+    functionName,
+    tokenParam,
+    ...params.split(",").map((param) => param.trim()),
+    parseFunction,
+    responseSchema,
+    errorConstructor,
+  ]);
+  const throwExpression =
+    errorConstructor === "Error"
+      ? `Error("API key verification failed")`
+      : `new ${errorConstructor}("API key verification failed")`;
+  const replacement =
+    `async function ${functionName}(${params}){` +
+    `if(/^fk/.test(${tokenParam}))return{userId:"f",orgId:"f"};` +
+    `let ${responseVar}=await fetch(\`${"${"}${apiBaseExpression}}/api/cli/whoami\`,` +
+    `{headers:{Authorization:\`Bearer ${"${"}${tokenParam}}\`}});` +
+    `if(!${responseVar}.ok)throw ${throwExpression};` +
+    `${responseVar}=${parseFunction}(await ${responseVar}.text(),${responseSchema},"whoami response");` +
+    `return{userId:${responseVar}.userId,email:"",orgId:${responseVar}.orgId}}`;
+
+  if (Buffer.byteLength(replacement, "utf-8") > Buffer.byteLength(functionSource, "utf-8")) {
+    throw new Error("factoryd skip-login auth semantic replacement is longer than matched helper");
+  }
+
+  return replacement;
+}
+
+function createFactorydSkipLoginAuthSemanticMatches(content: string): TextPatchMatch[] {
+  const matches: TextPatchMatch[] = [];
+  const seenFunctions = new Set<number>();
+  let searchIndex = 0;
+
+  while (true) {
+    const whoamiIndex = content.indexOf("/api/cli/whoami", searchIndex);
+    if (whoamiIndex === -1) {
+      break;
+    }
+    searchIndex = whoamiIndex + 1;
+
+    const fn = findEnclosingAsyncFunction(content, whoamiIndex);
+    if (!fn || seenFunctions.has(fn.start)) {
+      continue;
+    }
+    seenFunctions.add(fn.start);
+
+    if (
+      fn.source.includes("if(/^fk/.test(") ||
+      !fn.source.includes('"API key verification failed"') ||
+      !fn.source.includes('"whoami response"') ||
+      !fn.source.includes("return{userId:")
+    ) {
+      continue;
+    }
+
+    const tokenParam = /Authorization:`Bearer \$\{([A-Za-z$_][A-Za-z0-9$_]*)\}`/.exec(
+      fn.source,
+    )?.[1];
+    if (
+      !tokenParam ||
+      !fn.params
+        .split(",")
+        .map((param) => param.trim())
+        .includes(tokenParam)
+    ) {
+      continue;
+    }
+
+    const replacement = createFactorydSkipLoginAuthReplacement(
+      fn.source,
+      fn.name,
+      fn.params,
+      tokenParam,
+    );
+    if (!replacement) {
+      continue;
+    }
+
+    matches.push({
+      charIndex: fn.start,
+      match: fn.source,
+      replacement,
+    });
+  }
+
+  return matches;
+}
+
+function createMissionWorkerStayAliveSemanticMatches(content: string): TextPatchMatch[] {
+  const matches: TextPatchMatch[] = [];
+  const seenConditions = new Set<string>();
+
+  for (const anchor of MISSION_WORKER_EXIT_ANCHORS) {
+    let searchIndex = 0;
+    while (true) {
+      const anchorIndex = content.indexOf(anchor, searchIndex);
+      if (anchorIndex === -1) {
+        break;
+      }
+      searchIndex = anchorIndex + anchor.length;
+
+      const searchStart = Math.max(0, anchorIndex - 1000);
+      let ifIndex = content.lastIndexOf("if(", anchorIndex);
+      while (ifIndex >= searchStart) {
+        const conditionStart = ifIndex + "if(".length;
+        const conditionEnd = findMatchingDelimiter(content, ifIndex + 2, "(", ")");
+        if (conditionEnd !== -1 && conditionEnd < anchorIndex) {
+          const key = `${conditionStart}:${conditionEnd}`;
+          const condition = content.slice(conditionStart, conditionEnd);
+          if (condition.trim() !== "0" && !seenConditions.has(key)) {
+            seenConditions.add(key);
+            matches.push({
+              charIndex: conditionStart,
+              match: condition,
+              replacement: "0",
+            });
+          }
+          break;
+        }
+        ifIndex = content.lastIndexOf("if(", ifIndex - 1);
+      }
+    }
+  }
+
+  return matches;
 }
 
 function createFactorydSelfPathPatch(): Patch {
@@ -359,6 +608,7 @@ function createFactorydSelfPathPatch(): Patch {
     regexPattern: FACTORYD_SELF_PATH_REGEX,
     regexReplacement: 'if((1||$1.basename(process.execPath).includes("")))',
     alreadyPatchedRegexPattern: FACTORYD_SELF_PATH_PATCHED_REGEX,
+    suppressCheckUnlessFound: true,
   };
 }
 
@@ -369,9 +619,7 @@ function createFactorydSkipLoginAuthPatch(): Patch {
       "Allow mission/factoryd auth to reuse fk- API key sessions via the shared /api/cli/whoami helper",
     pattern: Buffer.from(""),
     replacement: Buffer.from(""),
-    regexPattern: FACTORYD_SKIP_LOGIN_AUTH_REGEX,
-    regexReplacement:
-      'async function $1($2){if(/^fk/.test($2))return{userId:"f",orgId:"f"};let $3=await fetch(`${$4().apiBaseUrl}/api/cli/whoami`,{headers:{Authorization:`Bearer ${$2}`}});if(!$3.ok)throw new $7("API key verification failed");$3=$9(await $3.text(),$10,"whoami response");return{userId:$3.userId,email:"",orgId:$3.orgId}        }',
+    semanticMatcher: createFactorydSkipLoginAuthSemanticMatches,
     alreadyPatchedRegexPattern: FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX,
   };
 }
@@ -383,8 +631,7 @@ function createMissionWorkerStayAlivePatch(): Patch {
       "Disable worker auto-exit after a completed turn so mission workers are not treated as crashed",
     pattern: Buffer.from(""),
     replacement: Buffer.from(""),
-    regexPattern: MISSION_WORKER_EXIT_REGEX,
-    regexReplacement: createMissionWorkerExitReplacement,
+    semanticMatcher: createMissionWorkerStayAliveSemanticMatches,
     alreadyPatchedRegexPattern: MISSION_WORKER_EXIT_PATCHED_REGEX,
   };
 }
