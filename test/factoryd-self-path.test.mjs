@@ -36,6 +36,20 @@ const MISSION_WORKER_EXIT_PATCHED_REGEX =
 const SKIP_LOGIN_V068_SOURCE = "process.env[LongerName.FACTORY_API_KEY]?.trim()";
 const FACTORYD_SKIP_LOGIN_AUTH_V0115_SOURCE =
   'async function pFT(H){let T=VL().apiBaseUrl,R;try{R=await fetch(`${T}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}})}catch(h){throw zH("FACTORY_API_KEY verification network failed",{reason:"network",cause:h}),h}let A=await R.text();if(!R.ok)throw zH("FACTORY_API_KEY verification rejected",{statusCode:R.status}),new sH("API key verification failed",{statusCode:R.status,body:A});let L;try{L=bo(A,Z2R,"whoami response")}catch(h){throw zH("FACTORY_API_KEY verification parse failed",{reason:"parse",cause:h}),h}return{userId:L.userId,email:"",orgId:L.orgId}}';
+const REASONING_EFFORT_CUSTOM_MODEL_LIST_V0115_SOURCE =
+  'supportedReasoningEfforts:C?["off","low","medium","high"]:["none"],defaultReasoningEffort:h.reasoningEffort??"none"';
+const REASONING_EFFORT_CUSTOM_MODEL_RESOLVER_V0115_SOURCE =
+  'supportedReasoningEfforts:C?["off","low","medium","high"]:["none"],defaultReasoningEffort:A.reasoningEffort??"none"';
+const REASONING_EFFORT_CUSTOM_MODEL_OLD_PATCHED_SOURCE =
+  'supportedReasoningEfforts:1?["high","max","xhigh","none"]:["high"],defaultReasoningEffort:h.reasoningEffort??"high"';
+const REASONING_EFFORT_CUSTOM_MODEL_PATCHED_REGEX =
+  /supportedReasoningEfforts:1\?\["medium","high","xhigh","max"\]:\["xx"\],defaultReasoningEffort:[A-Za-z$_][A-Za-z0-9$_]*\.reasoningEffort\?\?"high"/g;
+const REASONING_EFFORT_CUSTOM_MODEL_HELPER_V0119_SOURCE =
+  'function AGH(H,T){if(!(H!==void 0&&H!=="none"))return["none"];let A=T?qmD(T):void 0;if(A)return A;return[...DmD]}';
+const REASONING_EFFORT_CUSTOM_MODEL_HELPER_PATCHED_REGEX =
+  /function AGH\(H,T\)\{return\["medium","high","xhigh","max"\]\}\s+/g;
+const REASONING_EFFORT_DEFAULT_FROM_CONFIG_V0119_SOURCE =
+  'supportedReasoningEfforts:AGH(h.reasoningEffort,h.model),defaultReasoningEffort:h.reasoningEffort??"none"';
 
 async function runCliDryRunWithFactorydPatch(binaryMarker) {
   const dir = await mkdtemp(join(tmpdir(), "droid-patch-cli-"));
@@ -147,6 +161,48 @@ printf 'noop\\n'
   };
 }
 
+async function runCliPatchWithReasoningEffort(binaryMarker) {
+  const dir = await mkdtemp(join(tmpdir(), "droid-patch-cli-"));
+  const outputDir = await mkdtemp(join(tmpdir(), "droid-patch-out-"));
+  const alias = "droid-test";
+  const fakeDroidPath = join(dir, IS_WINDOWS ? "droid.cmd" : "droid");
+  const cliPath = fileURLToPath(new URL("../dist/cli.mjs", import.meta.url));
+  const script = IS_WINDOWS
+    ? `@echo off
+if "%~1"=="--version" (
+  echo 0.115.0
+  exit /b 0
+)
+echo noop
+rem ${binaryMarker}
+`
+    : `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  printf '0.115.0\\n'
+  exit 0
+fi
+printf 'noop\\n'
+# ${binaryMarker}
+`;
+
+  await writeFile(fakeDroidPath, script, "utf8");
+  if (!IS_WINDOWS) {
+    await chmod(fakeDroidPath, 0o755);
+  }
+
+  const result = await execFileAsync(
+    process.execPath,
+    [cliPath, "--reasoning-effort", "--no-backup", "-p", fakeDroidPath, "-o", outputDir, alias],
+    { cwd: join(fileURLToPath(new URL("..", import.meta.url))) },
+  );
+
+  return {
+    ...result,
+    source: script,
+    outputPath: join(outputDir, alias),
+  };
+}
+
 void test("factoryd self-path patch stays internal", async () => {
   const src = await readFile(new URL("../src/cli.ts", import.meta.url), "utf8");
   const metadataSrc = await readFile(new URL("../src/metadata.ts", import.meta.url), "utf8");
@@ -156,6 +212,55 @@ void test("factoryd self-path patch stays internal", async () => {
   assert.doesNotMatch(src, /--factoryd-self-path/);
   assert.doesNotMatch(src, /meta\.patches\.factorydSelfPath/);
   assert.doesNotMatch(metadataSrc, /factorydSelfPath/);
+});
+
+void test("reasoning-effort patch exposes medium and preserves byte length on 0.115 custom models", async () => {
+  const source = [
+    REASONING_EFFORT_CUSTOM_MODEL_LIST_V0115_SOURCE,
+    REASONING_EFFORT_CUSTOM_MODEL_RESOLVER_V0115_SOURCE,
+    'T!=="none"&&T!=="off"&&!R.supportedReasoningEfforts.includes(T)',
+    "supportedReasoningEfforts.length>1",
+    "supportedReasoningEfforts.length<=1",
+  ].join("\n");
+  const result = await runCliPatchWithReasoningEffort(source);
+  const patched = await readFile(result.outputPath, "utf8");
+
+  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(result.source));
+  assert.equal(patched.match(REASONING_EFFORT_CUSTOM_MODEL_PATCHED_REGEX)?.length, 2);
+  assert.doesNotMatch(patched, /\["off","low","medium","high"\]:\["none"\]/);
+  assert.match(result.stdout, /reasoningEffortSupportedCustomModels: Verified \(regex\)/);
+});
+
+void test("reasoning-effort patch upgrades old high/max/xhigh list to medium without length drift", async () => {
+  const result = await runCliPatchWithReasoningEffort(
+    REASONING_EFFORT_CUSTOM_MODEL_OLD_PATCHED_SOURCE,
+  );
+  const patched = await readFile(result.outputPath, "utf8");
+
+  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(result.source));
+  assert.match(patched, REASONING_EFFORT_CUSTOM_MODEL_PATCHED_REGEX);
+  assert.doesNotMatch(patched, /\["high","max","xhigh","none"\]/);
+});
+
+void test("reasoning-effort patch handles 0.119 helper-based custom model support", async () => {
+  const source = [
+    REASONING_EFFORT_CUSTOM_MODEL_HELPER_V0119_SOURCE,
+    REASONING_EFFORT_DEFAULT_FROM_CONFIG_V0119_SOURCE,
+    'T!=="none"&&T!=="off"&&!R.supportedReasoningEfforts.includes(T)',
+    "supportedReasoningEfforts.length>1",
+    "supportedReasoningEfforts.length<=1",
+  ].join("\n");
+  const result = await runCliPatchWithReasoningEffort(source);
+  const patched = await readFile(result.outputPath, "utf8");
+
+  assert.equal(Buffer.byteLength(patched), Buffer.byteLength(result.source));
+  assert.match(patched, REASONING_EFFORT_CUSTOM_MODEL_HELPER_PATCHED_REGEX);
+  assert.match(
+    patched,
+    /supportedReasoningEfforts:AGH\(h\.reasoningEffort,h\.model\),defaultReasoningEffort:h\.reasoningEffort\?\?"high"/,
+  );
+  assert.match(result.stdout, /reasoningEffortSupportedCustomModelsHelper: Verified \(regex\)/);
+  assert.match(result.stdout, /reasoningEffortDefaultFromConfig: Verified \(regex\)/);
 });
 
 void test("factoryd-self-path regex patch preserves byte length", async () => {
