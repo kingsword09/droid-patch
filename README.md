@@ -57,21 +57,21 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### Available Options
 
-| Option                | Description                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                         |
-| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
-| `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
-| `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                    |
-| `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
-| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
-| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; options: `high`, `max`, `xhigh`)      |
-| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
-| `--dry-run`           | Verify patches without actually modifying the binary                                                         |
-| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |
-| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                             |
-| `--no-backup`         | Skip creating backup of original binary                                                                      |
-| `-v, --verbose`       | Enable verbose output                                                                                        |
+| Option                | Description                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                                 |
+| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                                   |
+| `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit)         |
+| `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                            |
+| `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                        |
+| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                           |
+| `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; UI options: `medium`, `high`, `xhigh`, `max`) |
+| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                         |
+| `--dry-run`           | Verify patches without actually modifying the binary                                                                 |
+| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                             |
+| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                                     |
+| `--no-backup`         | Skip creating backup of original binary                                                                              |
+| `-v, --verbose`       | Enable verbose output                                                                                                |
 
 ### Manage Custom Models
 
@@ -341,18 +341,18 @@ Configure your custom model in `~/.factory/settings.json`:
 
 Enables reasoning effort control for custom models by patching the binary to:
 
-1. Set `supportedReasoningEfforts` from `["none"]` to `["high","max","xhigh"]`
+1. Rewrite the custom-model selector list to `1?["medium","high","xhigh","max"]:["xx"]`
 2. Set `defaultReasoningEffort` from `"none"` to `"high"`
 3. Enable the reasoning effort UI selector (normally hidden for custom models)
-4. Bypass validation to allow `xhigh` via settings.json
+4. Bypass validation so custom settings.json values can be forwarded
 
 **Purpose**: Allow custom models to use reasoning effort features that are normally only available for official models.
 
 **How it works**:
 
 - The droid UI shows a reasoning effort selector when `supportedReasoningEfforts.length > 1`
-- Custom models are hardcoded with `["none"]`, hiding the selector
-- This patch changes the value to `["high","max","xhigh"]` and modifies the UI condition to show the selector
+- Custom models are hardcoded with a limited reasoning list, hiding or restricting the selector
+- This patch changes the UI-facing value to `["medium","high","xhigh","max"]` and modifies the UI condition to show the selector
 - The reasoning effort setting will be sent to your custom model's API
 
 **Usage**:
@@ -365,9 +365,9 @@ npx droid-patch --reasoning-effort droid-reasoning
 npx droid-patch --is-custom --reasoning-effort droid-full
 ```
 
-**Configuring `xhigh` Reasoning Effort**:
+**Configuring Reasoning Effort**:
 
-The default reasoning effort is `high`. To use `xhigh` (extra high), edit your settings file:
+The default reasoning effort is `high`. To use another value, edit your settings file:
 
 ```bash
 # Edit ~/.factory/settings.json
@@ -381,11 +381,13 @@ The default reasoning effort is `high`. To use `xhigh` (extra high), edit your s
 Available values:
 | Value | Description |
 |-------|-------------|
+| `medium` | Medium reasoning effort |
 | `high` | High reasoning effort (default after patching) |
-| `max` | Maximum reasoning effort |
 | `xhigh` | Extra high reasoning effort |
+| `max` | Maximum reasoning effort |
+| `none` | Disable reasoning effort |
 
-**Note**: The `xhigh` value bypasses validation and is sent directly to your API. Make sure your custom model/proxy supports this parameter.
+**Note**: The UI exposes `medium`, `high`, `xhigh`, and `max`. Other values such as `none` can still be forwarded via config; make sure your custom model/proxy supports the selected parameter.
 
 ### `--standalone`
 

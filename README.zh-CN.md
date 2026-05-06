@@ -65,7 +65,7 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 | `--websearch`         | 外部搜索模式：使用 Smithery、Google PSE、Tavily、Serper、Brave、SearXNG、DuckDuckGo             |
 | `--websearch-proxy`   | 原生搜索模式：使用模型内置的 web_search 能力（需要 proxy 插件）                                 |
 | `--standalone`        | 独立模式：mock 非 LLM 的 Factory API（与 `--websearch` 或 `--websearch-proxy` 配合使用）        |
-| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（默认 `high`；可选：`high`、`max`、`xhigh`）                 |
+| `--reasoning-effort`  | 为自定义模型启用推理强度 UI 选择器（默认 `high`；UI 可选：`medium`、`high`、`xhigh`、`max`）    |
 | `--disable-telemetry` | 禁用遥测数据上传和 Sentry 错误报告                                                              |
 | `--dry-run`           | 验证修补但不实际修改二进制文件                                                                  |
 | `-p, --path <path>`   | droid 二进制文件路径（默认：`~/.droid/bin/droid`）                                              |
@@ -335,18 +335,18 @@ pnpm dev
 
 通过修补二进制文件为自定义模型启用推理强度控制：
 
-1. 将 `supportedReasoningEfforts` 从 `["none"]` 改为 `["high","max","xhigh"]`
+1. 将自定义模型选择器列表重写为 `1?["medium","high","xhigh","max"]:["xx"]`
 2. 将 `defaultReasoningEffort` 从 `"none"` 改为 `"high"`
 3. 启用推理强度 UI 选择器（通常对自定义模型隐藏）
-4. 绕过验证以允许通过 settings.json 设置 `xhigh`
+4. 绕过验证以允许转发 settings.json 中的自定义值
 
 **用途**：允许自定义模型使用通常仅对官方模型可用的推理强度功能。
 
 **工作原理**：
 
 - 当 `supportedReasoningEfforts.length > 1` 时，droid UI 会显示推理强度选择器
-- 自定义模型硬编码为 `["none"]`，隐藏了选择器
-- 此补丁将值改为 `["high","max","xhigh"]` 并修改 UI 条件以显示选择器
+- 自定义模型硬编码为受限推理强度列表，隐藏或限制了选择器
+- 此补丁将 UI 可见值改为 `["medium","high","xhigh","max"]` 并修改 UI 条件以显示选择器
 - 推理强度设置将发送到您的自定义模型 API
 
 **使用方法**：
@@ -359,9 +359,9 @@ npx droid-patch --reasoning-effort droid-reasoning
 npx droid-patch --is-custom --reasoning-effort droid-full
 ```
 
-**配置 `xhigh` 推理强度**：
+**配置推理强度**：
 
-默认推理强度为 `high`。要使用 `xhigh`（超高），请编辑设置文件：
+默认推理强度为 `high`。要使用其他值，请编辑设置文件：
 
 ```bash
 # 编辑 ~/.factory/settings.json
@@ -375,11 +375,13 @@ npx droid-patch --is-custom --reasoning-effort droid-full
 可用的值：
 | 值 | 描述 |
 |-------|-------------|
+| `medium` | 中等推理强度 |
 | `high` | 高推理强度（补丁后的默认值） |
-| `max` | 最大推理强度 |
 | `xhigh` | 超高推理强度 |
+| `max` | 最大推理强度 |
+| `none` | 禁用推理强度 |
 
-**注意**：`xhigh` 值会绕过验证直接发送到 API。请确保您的自定义模型/代理支持此参数。
+**注意**：UI 暴露的是 `medium`、`high`、`xhigh` 和 `max`。像 `none` 这类其他值仍可通过配置直传到 API；请确保您的自定义模型/代理支持所选参数。
 
 ### `--standalone`
 
