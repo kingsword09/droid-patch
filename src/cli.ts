@@ -695,9 +695,8 @@ function appendIsCustomPatches(patches: Patch[], droidPath: string | undefined):
 }
 
 function createReasoningEffortCustomModelsReplacement(match: string): string {
-  const modelConfigVar = /defaultReasoningEffort:([A-Za-z$_][A-Za-z0-9$_]*)\.reasoningEffort\?\?/.exec(
-    match,
-  )?.[1];
+  const modelConfigVar =
+    /defaultReasoningEffort:([A-Za-z$_][A-Za-z0-9$_]*)\.reasoningEffort\?\?/.exec(match)?.[1];
   if (!modelConfigVar) {
     throw new Error("Unable to identify custom model config variable for reasoning effort patch");
   }
@@ -734,8 +733,7 @@ function createReasoningEffortPatches(): Patch[] {
   return [
     {
       name: "reasoningEffortSupportedCustomModels",
-      description:
-        'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning effort',
+      description: 'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning effort',
       pattern: Buffer.from(""),
       replacement: Buffer.from(""),
       regexPattern: REASONING_EFFORT_CUSTOM_MODELS_REGEX,
@@ -745,8 +743,7 @@ function createReasoningEffortPatches(): Patch[] {
     },
     {
       name: "reasoningEffortSupportedCustomModelsHelper",
-      description:
-        'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning helper',
+      description: 'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning helper',
       pattern: Buffer.from(""),
       replacement: Buffer.from(""),
       regexPattern: REASONING_EFFORT_CUSTOM_MODELS_HELPER_REGEX,

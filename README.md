@@ -57,21 +57,21 @@ npx droid-patch --skip-login -o /path/to/dir my-droid
 
 ### Available Options
 
-| Option                | Description                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                         |
-| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                           |
-| `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit) |
-| `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                    |
-| `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                |
-| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                   |
+| Option                | Description                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--is-custom`         | Patch `isCustom:!0` to `isCustom:!1` (enables context compression for custom models)                                 |
+| `--skip-login`        | Bypass login by injecting a fake `FACTORY_API_KEY` into the binary                                                   |
+| `--api-base <url>`    | Replace API URL (standalone: binary patch, max 22 chars; with `--websearch`: proxy forward target, no limit)         |
+| `--websearch`         | External providers mode: Smithery, Google PSE, Tavily, Serper, Brave, SearXNG, DuckDuckGo                            |
+| `--websearch-proxy`   | Native provider mode: use model's built-in web_search (requires proxy plugin)                                        |
+| `--standalone`        | Standalone mode: mock non-LLM Factory APIs (use with `--websearch` or `--websearch-proxy`)                           |
 | `--reasoning-effort`  | Enable reasoning effort UI selector for custom models (default `high`; UI options: `medium`, `high`, `xhigh`, `max`) |
-| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                 |
-| `--dry-run`           | Verify patches without actually modifying the binary                                                         |
-| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                     |
-| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                             |
-| `--no-backup`         | Skip creating backup of original binary                                                                      |
-| `-v, --verbose`       | Enable verbose output                                                                                        |
+| `--disable-telemetry` | Disable telemetry and Sentry error reporting                                                                         |
+| `--dry-run`           | Verify patches without actually modifying the binary                                                                 |
+| `-p, --path <path>`   | Path to the droid binary (default: `~/.droid/bin/droid`)                                                             |
+| `-o, --output <dir>`  | Output directory for patched binary (creates file without alias)                                                     |
+| `--no-backup`         | Skip creating backup of original binary                                                                              |
+| `-v, --verbose`       | Enable verbose output                                                                                                |
 
 ### Manage Custom Models
 
