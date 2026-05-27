@@ -341,6 +341,8 @@ const FACTORYD_SELF_PATH_PATCHED_REGEX =
 const JS_IDENTIFIER = "[A-Za-z$_][A-Za-z0-9$_]*";
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
   /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/g;
+const SKIP_LOGIN_APIKEY_PRIORITY_PATCHED_REGEX =
+  /async function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*\)\{let [A-Za-z$_][A-Za-z0-9$_]*=[A-Za-z$_][A-Za-z0-9$_]*\.apiKey\?\.trim\(\);if\([A-Za-z$_][A-Za-z0-9$_]*&&\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{type:"api-key",token:[A-Za-z$_][A-Za-z0-9$_]*\}/g;
 const MISSION_WORKER_EXIT_ANCHORS = [
   '"[JsonRpc] Worker session exiting after completing turn"',
   '"[JsonRpcStreamingExec] Worker session exiting after completing turn"',
@@ -350,11 +352,11 @@ const MISSION_WORKER_EXIT_PATCHED_REGEX =
 const REASONING_EFFORT_CUSTOM_MODELS_REGEX =
   /supportedReasoningEfforts:(?:[A-Za-z$_][A-Za-z0-9$_]*\?\["off","low","medium","high"\]:\["none"\]|1\?\["high","max","xhigh","none"\]:\["high"\]),defaultReasoningEffort:([A-Za-z$_][A-Za-z0-9$_]*)\.reasoningEffort\?\?"(?:none|high)"/g;
 const REASONING_EFFORT_CUSTOM_MODELS_PATCHED_REGEX =
-  /supportedReasoningEfforts:1\?\["medium","high","xhigh","max"\]:\["xx"\],defaultReasoningEffort:[A-Za-z$_][A-Za-z0-9$_]*\.reasoningEffort\?\?"high"/g;
+  /supportedReasoningEfforts:1\?\["high","medium","xhigh","max"\]:\["xx"\],defaultReasoningEffort:[A-Za-z$_][A-Za-z0-9$_]*\.reasoningEffort\?\?"high"/g;
 const REASONING_EFFORT_CUSTOM_MODELS_HELPER_REGEX =
-  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*),([A-Za-z$_][A-Za-z0-9$_]*)\)\{if\(!\(\2!==void 0&&\2!=="none"\)\)return\["none"\];let ([A-Za-z$_][A-Za-z0-9$_]*)=\3\?([A-Za-z$_][A-Za-z0-9$_]*)\(\3\):void 0;if\(\4\)return \4;return\[\.\.\.([A-Za-z$_][A-Za-z0-9$_]*)\]\}/g;
+  /function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*),([A-Za-z$_][A-Za-z0-9$_]*)\)\{(?:if\(!\(\2!==void 0&&\2!=="none"\)\)return\["none"\];let ([A-Za-z$_][A-Za-z0-9$_]*)=\3\?([A-Za-z$_][A-Za-z0-9$_]*)\(\3\):void 0;if\(\4\)return \4;return\[\.\.\.([A-Za-z$_][A-Za-z0-9$_]*)\]|let ([A-Za-z$_][A-Za-z0-9$_]*)=\3\?([A-Za-z$_][A-Za-z0-9$_]*)\(\3\):void 0;if\(\7\)return \7\.supportedReasoningEfforts;if\(!\(\2!==void 0&&\2!=="none"\)\)return\["none"\];return [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*,\2\))\}/g;
 const REASONING_EFFORT_CUSTOM_MODELS_HELPER_PATCHED_REGEX =
-  /function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*,[A-Za-z$_][A-Za-z0-9$_]*\)\{return\["medium","high","xhigh","max"\]\}\s*/g;
+  /function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*,[A-Za-z$_][A-Za-z0-9$_]*\)\{return\["high","medium","xhigh","max"\]\}\s*/g;
 const REASONING_EFFORT_DEFAULT_FROM_CONFIG_REGEX =
   /defaultReasoningEffort:([A-Za-z$_][A-Za-z0-9$_]*)\.reasoningEffort\?\?"none"/g;
 const REASONING_EFFORT_DEFAULT_FROM_CONFIG_PATCHED_REGEX =
@@ -636,6 +638,40 @@ function createFactorydSkipLoginAuthPatch(): Patch {
   };
 }
 
+function createSkipLoginApiKeyPrioritySemanticMatches(content: string): TextPatchMatch[] {
+  const matches: TextPatchMatch[] = [];
+  const fnRegex =
+    /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=await ([A-Za-z$_][A-Za-z0-9$_]*)\(\{disableKeyring:\2\.disableKeyring\}\)\.load\(\);if\(\3\)return\{type:"workos",token:\3\.access_token\};let ([A-Za-z$_][A-Za-z0-9$_]*)=\2\.apiKey\?\.trim\(\);if\(\5\)return\{type:"api-key",token:\5\};return [A-Za-z$_][A-Za-z0-9$_]*\("[^"]*"\),null\}/g;
+  let m;
+  while ((m = fnRegex.exec(content)) !== null) {
+    const [fullMatch, fnName, param, keyringVar, cgFn, apiKeyVar] = m;
+    const replacement =
+      `async function ${fnName}(${param}){` +
+      `let ${apiKeyVar}=${param}.apiKey?.trim();` +
+      `if(${apiKeyVar}&&/^fk/.test(${apiKeyVar}))return{type:"api-key",token:${apiKeyVar}};` +
+      `let ${keyringVar}=await ${cgFn}({disableKeyring:${param}.disableKeyring}).load();` +
+      `if(${keyringVar})return{type:"workos",token:${keyringVar}.access_token};` +
+      `if(${apiKeyVar})return{type:"api-key",token:${apiKeyVar}};return null}`;
+    if (Buffer.byteLength(replacement, "utf-8") > Buffer.byteLength(fullMatch, "utf-8")) {
+      continue;
+    }
+    matches.push({ charIndex: m.index, match: fullMatch, replacement });
+  }
+  return matches;
+}
+
+function createSkipLoginApiKeyPriorityPatch(): Patch {
+  return {
+    name: "skipLoginApiKeyPriority",
+    description:
+      "Prioritize fk- API key over stored keyring/file credentials to bypass stale WorkOS tokens",
+    pattern: Buffer.from(""),
+    replacement: Buffer.from(""),
+    semanticMatcher: createSkipLoginApiKeyPrioritySemanticMatches,
+    alreadyPatchedRegexPattern: SKIP_LOGIN_APIKEY_PRIORITY_PATCHED_REGEX,
+  };
+}
+
 function createMissionWorkerStayAlivePatch(): Patch {
   return {
     name: "missionWorkerStayAlive",
@@ -672,6 +708,7 @@ function createMissionFactorydPatches(config: Pick<BinaryPatchConfig, "skipLogin
   const patches = [createFactorydSelfPathPatch(), createMissionWorkerStayAlivePatch()];
   if (config.skipLogin) {
     patches.push(createFactorydSkipLoginAuthPatch());
+    patches.push(createSkipLoginApiKeyPriorityPatch());
   }
   return patches;
 }
@@ -702,7 +739,7 @@ function createReasoningEffortCustomModelsReplacement(match: string): string {
   }
 
   const replacement =
-    `supportedReasoningEfforts:1?["medium","high","xhigh","max"]:["xx"],` +
+    `supportedReasoningEfforts:1?["high","medium","xhigh","max"]:["xx"],` +
     `defaultReasoningEffort:${modelConfigVar}.reasoningEffort??"high"`;
   if (Buffer.byteLength(replacement, "utf-8") !== Buffer.byteLength(match, "utf-8")) {
     throw new Error("reasoning effort replacement must exactly match custom model config length");
@@ -722,7 +759,7 @@ function createReasoningEffortCustomModelsHelperReplacement(match: string): stri
     throw new Error("Unable to identify custom model reasoning helper signature");
   }
 
-  const replacement = `function ${functionName}(${reasoningVar},${modelVar}){return["medium","high","xhigh","max"]}`;
+  const replacement = `function ${functionName}(${reasoningVar},${modelVar}){return["high","medium","xhigh","max"]}`;
   if (Buffer.byteLength(replacement, "utf-8") > Buffer.byteLength(match, "utf-8")) {
     throw new Error("reasoning effort helper replacement is longer than matched helper");
   }
@@ -733,7 +770,7 @@ function createReasoningEffortPatches(): Patch[] {
   return [
     {
       name: "reasoningEffortSupportedCustomModels",
-      description: 'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning effort',
+      description: 'Enable ["high","medium","xhigh","max"] in UI for custom model reasoning effort',
       pattern: Buffer.from(""),
       replacement: Buffer.from(""),
       regexPattern: REASONING_EFFORT_CUSTOM_MODELS_REGEX,
@@ -743,7 +780,7 @@ function createReasoningEffortPatches(): Patch[] {
     },
     {
       name: "reasoningEffortSupportedCustomModelsHelper",
-      description: 'Enable ["medium","high","xhigh","max"] in UI for custom model reasoning helper',
+      description: 'Enable ["high","medium","xhigh","max"] in UI for custom model reasoning helper',
       pattern: Buffer.from(""),
       replacement: Buffer.from(""),
       regexPattern: REASONING_EFFORT_CUSTOM_MODELS_HELPER_REGEX,
