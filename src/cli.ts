@@ -796,6 +796,7 @@ function createReasoningEffortPatches(): Patch[] {
       regexPattern: REASONING_EFFORT_DEFAULT_FROM_CONFIG_REGEX,
       regexReplacement: 'defaultReasoningEffort:$1.reasoningEffort??"high"',
       alreadyPatchedRegexPattern: REASONING_EFFORT_DEFAULT_FROM_CONFIG_PATCHED_REGEX,
+      suppressCheckUnlessFound: true,
     },
     {
       name: "reasoningEffortSupported",
