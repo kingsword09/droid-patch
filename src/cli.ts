@@ -342,7 +342,7 @@ const JS_IDENTIFIER = "[A-Za-z$_][A-Za-z0-9$_]*";
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
   /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/g;
 const SKIP_LOGIN_APIKEY_PRIORITY_PATCHED_REGEX =
-  /async function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*\)\{let [A-Za-z$_][A-Za-z0-9$_]*=[A-Za-z$_][A-Za-z0-9$_]*\.apiKey\?\.trim\(\);if\([A-Za-z$_][A-Za-z0-9$_]*&&\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{type:"api-key",token:[A-Za-z$_][A-Za-z0-9$_]*\}/g;
+  /async function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*\)\{(?:if\([A-Za-z$_][A-Za-z0-9$_]*\.airgapEnabled\)return [A-Za-z$_][A-Za-z0-9$_]*;)?let [A-Za-z$_][A-Za-z0-9$_]*=[A-Za-z$_][A-Za-z0-9$_]*\.apiKey\?\.trim\(\);if\([A-Za-z$_][A-Za-z0-9$_]*&&\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{type:"api-key",token:[A-Za-z$_][A-Za-z0-9$_]*\}/g;
 const MISSION_WORKER_EXIT_ANCHORS = [
   '"[JsonRpc] Worker session exiting after completing turn"',
   '"[JsonRpcStreamingExec] Worker session exiting after completing turn"',
@@ -641,12 +641,14 @@ function createFactorydSkipLoginAuthPatch(): Patch {
 function createSkipLoginApiKeyPrioritySemanticMatches(content: string): TextPatchMatch[] {
   const matches: TextPatchMatch[] = [];
   const fnRegex =
-    /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{let ([A-Za-z$_][A-Za-z0-9$_]*)=await ([A-Za-z$_][A-Za-z0-9$_]*)\(\{disableKeyring:\2\.disableKeyring\}\)\.load\(\);if\(\3\)return\{type:"workos",token:\3\.access_token\};let ([A-Za-z$_][A-Za-z0-9$_]*)=\2\.apiKey\?\.trim\(\);if\(\5\)return\{type:"api-key",token:\5\};return [A-Za-z$_][A-Za-z0-9$_]*\("[^"]*"\),null\}/g;
+    /async function ([A-Za-z$_][A-Za-z0-9$_]*)\(([A-Za-z$_][A-Za-z0-9$_]*)\)\{(?:(if\(\2\.airgapEnabled\)return [A-Za-z$_][A-Za-z0-9$_]*;))?let ([A-Za-z$_][A-Za-z0-9$_]*)=await ([A-Za-z$_][A-Za-z0-9$_]*)\(\{disableKeyring:\2\.disableKeyring\}\)\.load\(\);if\(\4\)return\{type:"workos",token:\4\.access_token\};let ([A-Za-z$_][A-Za-z0-9$_]*)=\2\.apiKey\?\.trim\(\);if\(\6\)return\{type:"api-key",token:\6\};return [A-Za-z$_][A-Za-z0-9$_]*\("[^"]*"\),null\}/g;
   let m;
   while ((m = fnRegex.exec(content)) !== null) {
-    const [fullMatch, fnName, param, keyringVar, cgFn, apiKeyVar] = m;
+    const [fullMatch, fnName, param, airgapGuard, keyringVar, cgFn, apiKeyVar] = m;
+    const airgapPrefix = airgapGuard ? airgapGuard : "";
     const replacement =
       `async function ${fnName}(${param}){` +
+      airgapPrefix +
       `let ${apiKeyVar}=${param}.apiKey?.trim();` +
       `if(${apiKeyVar}&&/^fk/.test(${apiKeyVar}))return{type:"api-key",token:${apiKeyVar}};` +
       `let ${keyringVar}=await ${cgFn}({disableKeyring:${param}.disableKeyring}).load();` +
