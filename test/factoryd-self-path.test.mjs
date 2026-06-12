@@ -403,7 +403,11 @@ void test("skip-login dry-run handles 0.115 factoryd whoami helper and worker ex
 });
 
 void test("mission worker auto-exit patch preserves byte length", async () => {
-  for (const workerSource of [MISSION_WORKER_EXIT_SOURCE, MISSION_WORKER_EXIT_V0115_SOURCE, MISSION_WORKER_EXIT_DELEGATED_SOURCE]) {
+  for (const workerSource of [
+    MISSION_WORKER_EXIT_SOURCE,
+    MISSION_WORKER_EXIT_V0115_SOURCE,
+    MISSION_WORKER_EXIT_DELEGATED_SOURCE,
+  ]) {
     const marker = `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\n${workerSource}`;
     const result = await runCliPatchWithSkipLogin(marker);
     const patched = await readFile(result.outputPath, "utf8");
