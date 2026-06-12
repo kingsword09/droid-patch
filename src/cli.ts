@@ -346,9 +346,10 @@ const SKIP_LOGIN_APIKEY_PRIORITY_PATCHED_REGEX =
 const MISSION_WORKER_EXIT_ANCHORS = [
   '"[JsonRpc] Worker session exiting after completing turn"',
   '"[JsonRpcStreamingExec] Worker session exiting after completing turn"',
+  '"[JsonRpc] Delegated session exiting after completing turn"',
 ];
 const MISSION_WORKER_EXIT_PATCHED_REGEX =
-  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc(?:StreamingExec)?\] Worker session exiting after completing turn"\)/g;
+  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc(?:StreamingExec)?\] (?:Worker|Delegated) session exiting after completing turn"\)/g;
 const REASONING_EFFORT_CUSTOM_MODELS_REGEX =
   /supportedReasoningEfforts:(?:[A-Za-z$_][A-Za-z0-9$_]*\?\["off","low","medium","high"\]:\["none"\]|1\?\["high","max","xhigh","none"\]:\["high"\]),defaultReasoningEffort:([A-Za-z$_][A-Za-z0-9$_]*)\.reasoningEffort\?\?"(?:none|high)"/g;
 const REASONING_EFFORT_CUSTOM_MODELS_PATCHED_REGEX =

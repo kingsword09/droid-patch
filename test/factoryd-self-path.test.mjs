@@ -31,8 +31,10 @@ const MISSION_WORKER_EXIT_SOURCE =
   'if(Wd(vT().getCurrentSessionTags())&&!this.wasInterrupted)MH("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),process.exit(0)';
 const MISSION_WORKER_EXIT_V0115_SOURCE =
   'if(fd(uT().getCurrentSessionTags())&&!this.wasInterrupted)kH("[JsonRpc] Worker session exiting after completing turn"),await this.stop(),await Bq(0)';
+const MISSION_WORKER_EXIT_DELEGATED_SOURCE =
+  'if(this.shouldExitAfterDelegatedTurn()&&!this.wasInterrupted)ET("[JsonRpc] Delegated session exiting after completing turn"),await this.stop(),await $t(0)';
 const MISSION_WORKER_EXIT_PATCHED_REGEX =
-  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc\] Worker session exiting after completing turn"\)/;
+  /if\(0\s*\)[A-Za-z$_][A-Za-z0-9$_]*\("\[JsonRpc\] (?:Worker|Delegated) session exiting after completing turn"\)/;
 const SKIP_LOGIN_V068_SOURCE = "process.env[LongerName.FACTORY_API_KEY]?.trim()";
 const FACTORYD_SKIP_LOGIN_AUTH_V0115_SOURCE =
   'async function pFT(H){let T=VL().apiBaseUrl,R;try{R=await fetch(`${T}/api/cli/whoami`,{method:"GET",headers:{Authorization:`Bearer ${H}`}})}catch(h){throw zH("FACTORY_API_KEY verification network failed",{reason:"network",cause:h}),h}let A=await R.text();if(!R.ok)throw zH("FACTORY_API_KEY verification rejected",{statusCode:R.status}),new sH("API key verification failed",{statusCode:R.status,body:A});let L;try{L=bo(A,Z2R,"whoami response")}catch(h){throw zH("FACTORY_API_KEY verification parse failed",{reason:"parse",cause:h}),h}return{userId:L.userId,email:"",orgId:L.orgId}}';
@@ -401,7 +403,11 @@ void test("skip-login dry-run handles 0.115 factoryd whoami helper and worker ex
 });
 
 void test("mission worker auto-exit patch preserves byte length", async () => {
-  for (const workerSource of [MISSION_WORKER_EXIT_SOURCE, MISSION_WORKER_EXIT_V0115_SOURCE]) {
+  for (const workerSource of [
+    MISSION_WORKER_EXIT_SOURCE,
+    MISSION_WORKER_EXIT_V0115_SOURCE,
+    MISSION_WORKER_EXIT_DELEGATED_SOURCE,
+  ]) {
     const marker = `${SKIP_LOGIN_V068_SOURCE}\n${FACTORYD_SKIP_LOGIN_AUTH_SOURCE}\n${workerSource}`;
     const result = await runCliPatchWithSkipLogin(marker);
     const patched = await readFile(result.outputPath, "utf8");
