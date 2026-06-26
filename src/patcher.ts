@@ -193,7 +193,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
         if (!suppressCheckUnlessFound || alreadyPatched) {
           logCheckHeader();
         }
-        if (!suppressCheckUnlessFound) {
+        if (!suppressCheckUnlessFound && !alreadyPatched) {
           console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
         }
         const missIsHidden = suppressCheckUnlessFound && !alreadyPatched;
@@ -263,7 +263,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
         if (!suppressCheckUnlessFound || alreadyPatched) {
           logCheckHeader();
         }
-        if (!suppressCheckUnlessFound) {
+        if (!suppressCheckUnlessFound && !alreadyPatched) {
           console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
         }
         const missIsHidden = suppressCheckUnlessFound && !alreadyPatched;
@@ -336,7 +336,7 @@ export async function patchDroid(options: PatchOptions): Promise<PatchDroidResul
       if (!suppressCheckUnlessFound || alreadyPatched) {
         logCheckHeader();
       }
-      if (!suppressCheckUnlessFound) {
+      if (!suppressCheckUnlessFound && !alreadyPatched) {
         console.log(styleText("yellow", `    ! Pattern not found - may already be patched`));
       }
       const result = {

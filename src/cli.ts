@@ -342,7 +342,7 @@ const JS_IDENTIFIER = "[A-Za-z$_][A-Za-z0-9$_]*";
 const FACTORYD_SKIP_LOGIN_AUTH_PATCHED_REGEX =
   /if\(\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{userId:"f",orgId:"f"\}/g;
 const SKIP_LOGIN_APIKEY_PRIORITY_PATCHED_REGEX =
-  /async function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*\)\{(?:if\([A-Za-z$_][A-Za-z0-9$_]*\.airgapEnabled\)return [A-Za-z$_][A-Za-z0-9$_]*;)?let [A-Za-z$_][A-Za-z0-9$_]*=[A-Za-z$_][A-Za-z0-9$_]*\.apiKey\?\.trim\(\);if\([A-Za-z$_][A-Za-z0-9$_]*&&\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\)\)return\{type:"api-key",token:[A-Za-z$_][A-Za-z0-9$_]*\}/g;
+  /async function [A-Za-z$_][A-Za-z0-9$_]*\([A-Za-z$_][A-Za-z0-9$_]*\)\{(?:if\([A-Za-z$_][A-Za-z0-9$_]*\.airgapEnabled\)return [A-Za-z$_][A-Za-z0-9$_]*;)?let [A-Za-z$_][A-Za-z0-9$_]*=[A-Za-z$_][A-Za-z0-9$_]*\.apiKey\?\.trim\(\);if\([A-Za-z$_][A-Za-z0-9$_]*(?:&&\/\^fk\/\.test\([A-Za-z$_][A-Za-z0-9$_]*\))?\)return\{type:"api-key",token:[A-Za-z$_][A-Za-z0-9$_]*\}/g;
 const MISSION_WORKER_EXIT_ANCHORS = [
   '"[JsonRpc] Worker session exiting after completing turn"',
   '"[JsonRpcStreamingExec] Worker session exiting after completing turn"',
