@@ -217,11 +217,31 @@ function isRetryableSearchFailure(statusCode, message) {
 function pushUniqueResult(results, result) {
   if (!result || !result.url) return;
   if (results.some(function(existing) { return existing.url === result.url; })) return;
-  results.push({
+  const normalized = {
     title: result.title || result.url,
     url: result.url,
-    content: result.content || '',
-  });
+    text: getResultText(result),
+  };
+  const publishedDate = result.publishedDate || result.page_age || result.publish_date;
+  const author = result.author;
+  if (publishedDate) normalized.publishedDate = publishedDate;
+  if (author) normalized.author = author;
+  results.push(normalized);
+}
+
+function getResultText(result) {
+  const candidates = [
+    result.text,
+    result.summary,
+    result.content,
+    result.snippet,
+    result.page_content,
+    result.description,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return '';
 }
 
 function parseOpenAITextResults(text, numResults) {
@@ -372,10 +392,12 @@ async function searchAnthropicNative(query, numResults, modelConfig) {
     if (block.type !== 'web_search_tool_result') continue;
     for (const result of (block.content || [])) {
       if (result.type !== 'web_search_result') continue;
-      results.push({
+      pushUniqueResult(results, {
         title: result.title || '',
         url: result.url || '',
-        content: result.snippet || result.page_content || '',
+        text: result.text || result.snippet || result.page_content || result.description || '',
+        publishedDate: result.page_age || result.publishedDate || '',
+        author: result.author,
       });
     }
   }
@@ -408,7 +430,6 @@ async function searchOpenAINative(query, numResults, modelConfig) {
       },
     },
   ];
-
   let lastError = null;
   for (const variant of requestVariants) {
     try {
@@ -433,7 +454,7 @@ async function searchOpenAINative(query, numResults, modelConfig) {
             pushUniqueResult(results, {
               title: annotation.title || '',
               url: annotation.url || '',
-              content: annotation.title || '',
+              text: annotation.title || content.text || '',
             });
           }
         }

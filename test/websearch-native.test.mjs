@@ -264,6 +264,58 @@ async function startOpenAIStubServer(mode = "annotations") {
   };
 }
 
+async function startAnthropicStubServer() {
+  let requestBody = null;
+  const server = createServer((req, res) => {
+    if (req.url !== "/v1/messages" || req.method !== "POST") {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      requestBody = JSON.parse(body);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          content: [
+            {
+              type: "web_search_tool_result",
+              content: [
+                {
+                  type: "web_search_result",
+                  title: "Anthropic Result",
+                  url: "https://anthropic.example/result",
+                  page_age: "2026-08-10",
+                  snippet: "Anthropic search result text.",
+                },
+              ],
+            },
+          ],
+        }),
+      );
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    getRequestBody() {
+      return requestBody;
+    },
+    async close() {
+      await new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    },
+  };
+}
+
 void test("native websearch proxy falls back to mission model settings", async () => {
   const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
   const upstream = await startOpenAIStubServer();
@@ -348,6 +400,8 @@ void test("native websearch proxy follows the runtime x-client-model on each req
         },
       );
       assert.equal(currentResponse.status, 200);
+      const currentPayload = await currentResponse.json();
+      assert.equal(currentPayload.results[0].text, "Example Result");
 
       const defaultResponse = await requestSearch(
         port,
@@ -422,6 +476,62 @@ void test("native websearch proxy does not silently fall back for an unsupported
   }
 });
 
+void test("native websearch proxy sends Anthropic native search and returns Droid result fields", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+  const upstream = await startAnthropicStubServer();
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [
+        {
+          id: "custom:claude-current",
+          model: "claude-sonnet-4-current",
+          baseUrl: upstream.baseUrl,
+          apiKey: "test-key",
+          displayName: "Claude current",
+          provider: "anthropic",
+        },
+      ],
+      sessionDefaultSettings: {
+        model: "custom:claude-current",
+      },
+    });
+
+    const droidPath = await createFakeDroidBinary(homeDir);
+    await createNativeAlias(homeDir, droidPath, "droid-native-anthropic");
+
+    const { child, port } = await startNativeProxy(homeDir, "droid-native-anthropic");
+    try {
+      const response = await requestSearch(
+        port,
+        { query: "factory ai", numResults: 3 },
+        "/api/tools/web-search",
+        { "x-client-model": "custom:claude-current" },
+      );
+      assert.equal(response.status, 200);
+      const payload = await response.json();
+      assert.deepEqual(payload.results, [
+        {
+          title: "Anthropic Result",
+          url: "https://anthropic.example/result",
+          text: "Anthropic search result text.",
+          publishedDate: "2026-08-10",
+        },
+      ]);
+
+      const requestBody = upstream.getRequestBody();
+      assert.equal(requestBody.model, "claude-sonnet-4-current");
+      assert.equal(requestBody.tools[0].type, "web_search_20250305");
+      assert.equal(requestBody.tools[0].name, "web_search");
+    } finally {
+      await stopChild(child);
+    }
+  } finally {
+    await upstream.close();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
 void test("native websearch proxy parses text-only OpenAI search results", async () => {
   const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
   const upstream = await startOpenAIStubServer("text-only");
@@ -453,6 +563,7 @@ void test("native websearch proxy parses text-only OpenAI search results", async
       const payload = await response.json();
       assert.equal(payload.results.length, 2);
       assert.equal(payload.results[0].url, "https://www.npmjs.com/package/react-activity");
+      assert.equal(payload.results[0].text, "Official npm package page with install details.");
       assert.equal(payload.results[1].url, "https://github.com/example/react-activity");
     } finally {
       await stopChild(child);
