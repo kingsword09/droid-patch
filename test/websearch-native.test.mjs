@@ -144,10 +144,10 @@ async function startNativeProxy(homeDir, alias) {
   }
 }
 
-async function requestSearch(port, payload, pathname = "/api/tools/web-search") {
+async function requestSearch(port, payload, pathname = "/api/tools/web-search", headers = {}) {
   return fetch(`http://127.0.0.1:${port}${pathname}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(payload),
   });
 }
@@ -164,6 +164,7 @@ async function requestJson(port, pathname, options = {}) {
 
 async function startOpenAIStubServer(mode = "annotations") {
   let attempts = 0;
+  const models = [];
   const server = createServer((req, res) => {
     if (req.url !== "/responses" || req.method !== "POST") {
       res.writeHead(404);
@@ -178,6 +179,7 @@ async function startOpenAIStubServer(mode = "annotations") {
     req.on("end", () => {
       attempts += 1;
       const parsed = JSON.parse(body);
+      models.push(parsed.model);
       assert.ok(parsed.tools?.length);
       if (mode === "retry-once" && attempts === 1) {
         res.writeHead(502, { "Content-Type": "application/json" });
@@ -251,6 +253,9 @@ async function startOpenAIStubServer(mode = "annotations") {
     getAttempts() {
       return attempts;
     },
+    getModels() {
+      return [...models];
+    },
     async close() {
       await new Promise((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
@@ -290,6 +295,124 @@ void test("native websearch proxy falls back to mission model settings", async (
       const payload = await response.json();
       assert.equal(payload.results.length, 1);
       assert.equal(payload.results[0].url, "https://example.com/result");
+    } finally {
+      await stopChild(child);
+    }
+  } finally {
+    await upstream.close();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy follows the runtime x-client-model on each request", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+  const upstream = await startOpenAIStubServer();
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [
+        {
+          id: "custom:gpt-5-4-default",
+          model: "gpt-5.4-default",
+          baseUrl: upstream.baseUrl,
+          apiKey: "test-key",
+          displayName: "GPT 5.4 default",
+          provider: "openai",
+        },
+        {
+          id: "custom:grok-4-5-current",
+          model: "grok-4.5-current",
+          baseUrl: upstream.baseUrl,
+          apiKey: "test-key",
+          displayName: "Grok 4.5 current",
+          provider: "openai",
+        },
+      ],
+      sessionDefaultSettings: {
+        model: "custom:gpt-5-4-default",
+      },
+    });
+
+    const droidPath = await createFakeDroidBinary(homeDir);
+    await createNativeAlias(homeDir, droidPath, "droid-native-runtime-model");
+
+    const { child, port } = await startNativeProxy(homeDir, "droid-native-runtime-model");
+    try {
+      const currentResponse = await requestSearch(
+        port,
+        { query: "factory ai", numResults: 3 },
+        "/api/tools/web-search",
+        {
+          "x-session-id": "session-current-model",
+          "x-client-model": "custom:grok-4-5-current",
+        },
+      );
+      assert.equal(currentResponse.status, 200);
+
+      const defaultResponse = await requestSearch(
+        port,
+        { query: "factory ai", numResults: 3 },
+        "/api/tools/web-search",
+        {
+          "x-session-id": "session-current-model",
+          "x-client-model": "custom:gpt-5-4-default",
+        },
+      );
+      assert.equal(defaultResponse.status, 200);
+      assert.deepEqual(upstream.getModels(), ["grok-4.5-current", "gpt-5.4-default"]);
+    } finally {
+      await stopChild(child);
+    }
+  } finally {
+    await upstream.close();
+    await rm(homeDir, { recursive: true, force: true });
+  }
+});
+
+void test("native websearch proxy does not silently fall back for an unsupported runtime model", async () => {
+  const homeDir = await mkdtemp(join(tmpdir(), "droid-patch-native-"));
+  const upstream = await startOpenAIStubServer();
+
+  try {
+    await writeFactorySettings(homeDir, {
+      customModels: [
+        {
+          id: "custom:generic-current",
+          model: "generic-model",
+          baseUrl: upstream.baseUrl,
+          apiKey: "test-key",
+          displayName: "Generic current",
+          provider: "generic-chat-completion-api",
+        },
+        {
+          id: "custom:gpt-5-4-default",
+          model: "gpt-5.4-default",
+          baseUrl: upstream.baseUrl,
+          apiKey: "test-key",
+          displayName: "GPT 5.4 default",
+          provider: "openai",
+        },
+      ],
+      sessionDefaultSettings: {
+        model: "custom:gpt-5-4-default",
+      },
+    });
+
+    const droidPath = await createFakeDroidBinary(homeDir);
+    await createNativeAlias(homeDir, droidPath, "droid-native-runtime-error");
+
+    const { child, port } = await startNativeProxy(homeDir, "droid-native-runtime-error");
+    try {
+      const response = await requestSearch(
+        port,
+        { query: "factory ai", numResults: 3 },
+        "/api/tools/web-search",
+        { "x-client-model": "custom:generic-current" },
+      );
+      assert.equal(response.status, 400);
+      const payload = await response.json();
+      assert.match(payload.error, /does not support native websearch/);
+      assert.equal(upstream.getAttempts(), 0);
     } finally {
       await stopChild(child);
     }

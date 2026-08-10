@@ -45,6 +45,12 @@ function isSearchRequest(url, method) {
   return method === 'POST' && SEARCH_ROUTE_ALIASES.has(url.pathname);
 }
 
+function getHeaderValue(headers, name) {
+  const value = headers && headers[name];
+  if (Array.isArray(value)) return value.length > 0 ? String(value[0]).trim() : null;
+  return typeof value === 'string' ? value.trim() : null;
+}
+
 let cachedSettings = null;
 let settingsLastModified = 0;
 let lastObservedProvider = null;
@@ -102,7 +108,7 @@ function summarizeSupportedModels(settings, preferredProvider) {
     .join(', ');
 }
 
-function getCurrentModelConfig(preferredProvider) {
+function getCurrentModelConfig(requestedModelId, preferredProvider) {
   const settings = getFactorySettings();
   if (!settings) {
     return {
@@ -112,6 +118,34 @@ function getCurrentModelConfig(preferredProvider) {
   }
 
   const customModels = listCustomModels(settings);
+
+  // Newer Droid versions identify the active model on every web-search
+  // request. Never silently switch to a different model when that signal is
+  // present but cannot be resolved.
+  if (requestedModelId) {
+    const requestedModel = customModels.find(function(model) {
+      return model.id === requestedModelId;
+    });
+
+    if (!requestedModel) {
+      return {
+        error: 'Active model "' + requestedModelId + '" was not found in ~/.factory/settings.json',
+        statusCode: 400,
+      };
+    }
+
+    if (!isSupportedModel(requestedModel)) {
+      return {
+        error: 'Active model "' + requestedModelId + '" does not support native websearch. Supported providers: anthropic, openai',
+        statusCode: 400,
+      };
+    }
+
+    lastObservedProvider = requestedModel.provider;
+    log('Resolved runtime model:', requestedModel.id, '| Provider:', requestedModel.provider);
+    return { modelConfig: requestedModel, source: 'request-header' };
+  }
+
   const candidateIds = buildCandidateModelIds(settings);
   for (const candidateId of candidateIds) {
     const modelConfig = customModels.find(function(model) {
@@ -425,11 +459,11 @@ async function searchOpenAINative(query, numResults, modelConfig) {
   throw lastError || new Error('OpenAI web search failed');
 }
 
-async function search(query, numResults) {
+async function search(query, numResults, requestedModelId) {
   numResults = numResults || 10;
-  log('Search:', query);
+  log('Search:', query, requestedModelId ? '| model: ' + requestedModelId : '| model: fallback');
 
-  const resolved = getCurrentModelConfig(lastObservedProvider);
+  const resolved = getCurrentModelConfig(requestedModelId, lastObservedProvider);
   if (!resolved.modelConfig) {
     return {
       results: [],
@@ -482,12 +516,13 @@ ${generateFactoryCompatRequestGuard().trimEnd()}
   }
 
   if (isSearchRequest(url, req.method)) {
+    const requestedModelId = getHeaderValue(req.headers, 'x-client-model');
     let body = '';
     req.on('data', function(c) { body += c; });
     req.on('end', async function() {
       try {
         const parsed = JSON.parse(body);
-        const result = await search(parsed.query, parsed.numResults || 10);
+        const result = await search(parsed.query, parsed.numResults || 10, requestedModelId);
         if (result.error) {
           log('Search failed:', result.error);
           res.writeHead(result.statusCode || 500, { 'Content-Type': 'application/json' });
