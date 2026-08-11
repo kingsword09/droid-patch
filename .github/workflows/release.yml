@@ -52,7 +52,7 @@ jobs:
         if: steps.check_release.outputs.is_release == 'true'
         uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
